@@ -1,0 +1,40 @@
+{
+  "name": "Gramine Java Benchmark",
+  "image": "gramineproject/gramine:stable-noble",
+  "remoteUser": "dev",
+  "runArgs": [
+    "--name gramine-java-sgx",
+    "--device=/dev/sgx:/dev/sgx",
+    "--device=/dev/sgx_enclave:/dev/sgx_enclave",
+    "--device=/dev/sgx_provision:/dev/sgx_provision",
+    "--device=/dev/sgx_vepc:/dev/sgx_vepc"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {},
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "none",
+      "installGradle": "true",
+      "installMaven": "true"
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "configureZshAsDefaultShell": "true",
+      "installOhMyZsh": "true",
+      "upgradePackages": "true"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "configureGitUser": true,
+      "userName": "Luca Di Bello",
+      "userEmail": "lucadibello@proton.me"
+    }
+  },
+  "forwardPorts": [2222],
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"
+  ],
+  "workspaceFolder": "/workspace",
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/ssh-agent"
+  }
+}
