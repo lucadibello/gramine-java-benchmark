@@ -18,16 +18,12 @@ endif
 TARGET_DIR = target
 CLASSES_DIR = $(TARGET_DIR)/classes
 
-SOURCE_FILES = \
-	src/hello_world/HelloWorld.java
-
 SERVER_SOURCE_FILES = \
 	src/server/BenchServer.java
 
 CLIENT_SOURCE_FILES = \
 	src/client/BenchClient.java
 
-CLASS_FILES = $(patsubst src/%.java,$(CLASSES_DIR)/%.class,$(SOURCE_FILES))
 SERVER_CLASS_FILES = $(patsubst src/%.java,$(CLASSES_DIR)/%.class,$(SERVER_SOURCE_FILES))
 CLIENT_CLASS_FILES = $(patsubst src/%.java,$(CLASSES_DIR)/%.class,$(CLIENT_SOURCE_FILES))
 
@@ -44,7 +40,7 @@ $(CLASSES_DIR):
 	@mkdir -p $(CLASSES_DIR)
 
 .PHONY: all
-all: $(CLASS_FILES) $(SERVER_CLASS_FILES) $(CLIENT_CLASS_FILES) ${APP_NAME}.manifest
+all: $(SERVER_CLASS_FILES) $(CLIENT_CLASS_FILES) ${APP_NAME}.manifest
 ifeq ($(SGX),1)
 all: ${APP_NAME}.manifest.sgx java.sig
 endif
