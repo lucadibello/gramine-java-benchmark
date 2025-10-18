@@ -28,7 +28,11 @@
             "userName": "Luca Di Bello",
             "userEmail": "lucadibello@proton.me"
         },
-        "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {}
+        "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {},
+        "ghcr.io/jungaretti/features/make:1": {},
+        "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
+            "packages": "gcc"
+        }
     },
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
