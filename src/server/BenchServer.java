@@ -1,14 +1,12 @@
-package server;
-
-import javax.net.ssl.*;
 import java.io.*;
-import java.net.ServerSocket;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.concurrent.*;
 import java.util.zip.CRC32;
+import javax.net.ssl.*;
 
 public class BenchServer {
+
     private static final int DEFAULT_PORT = 8443;
     private static final int THREAD_POOL_SIZE = 10;
     private static final String KEYSTORE_TYPE = "JKS";
@@ -27,20 +25,31 @@ public class BenchServer {
     /**
      * Initialize SSL context with keystore
      */
-    private SSLContext createSSLContext(String keystorePath, String keystorePassword) throws Exception {
+    private SSLContext createSSLContext(
+        String keystorePath,
+        String keystorePassword
+    ) throws Exception {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE_TYPE);
         try (FileInputStream fis = new FileInputStream(keystorePath)) {
             keyStore.load(fis, keystorePassword.toCharArray());
         }
 
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(
+            KeyManagerFactory.getDefaultAlgorithm()
+        );
         kmf.init(keyStore, keystorePassword.toCharArray());
 
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(
+            TrustManagerFactory.getDefaultAlgorithm()
+        );
         tmf.init(keyStore);
 
         SSLContext sslContext = SSLContext.getInstance(TLS_PROTOCOL);
-        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new SecureRandom());
+        sslContext.init(
+            kmf.getKeyManagers(),
+            tmf.getTrustManagers(),
+            new SecureRandom()
+        );
 
         return sslContext;
     }
@@ -48,12 +57,18 @@ public class BenchServer {
     /**
      * Start the TLS server
      */
-    public void start(String keystorePath, String keystorePassword) throws Exception {
-        SSLContext sslContext = createSSLContext(keystorePath, keystorePassword);
-        SSLServerSocketFactory sslServerSocketFactory = sslContext.getServerSocketFactory();
+    public void start(String keystorePath, String keystorePassword)
+        throws Exception {
+        SSLContext sslContext = createSSLContext(
+            keystorePath,
+            keystorePassword
+        );
+        SSLServerSocketFactory sslServerSocketFactory =
+            sslContext.getServerSocketFactory();
 
-        serverSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(port);
-        serverSocket.setEnabledProtocols(new String[]{TLS_PROTOCOL});
+        serverSocket =
+            (SSLServerSocket) sslServerSocketFactory.createServerSocket(port);
+        serverSocket.setEnabledProtocols(new String[] { TLS_PROTOCOL });
 
         running = true;
         System.out.println("TLS Server started on port " + port);
@@ -61,11 +76,16 @@ public class BenchServer {
         while (running) {
             try {
                 SSLSocket clientSocket = (SSLSocket) serverSocket.accept();
-                System.out.println("Client connected: " + clientSocket.getInetAddress().getHostAddress());
+                System.out.println(
+                    "Client connected: " +
+                        clientSocket.getInetAddress().getHostAddress()
+                );
                 executorService.submit(new ClientHandler(clientSocket));
             } catch (IOException e) {
                 if (running) {
-                    System.err.println("Error accepting client connection: " + e.getMessage());
+                    System.err.println(
+                        "Error accepting client connection: " + e.getMessage()
+                    );
                 }
             }
         }
@@ -81,7 +101,9 @@ public class BenchServer {
                 serverSocket.close();
             }
         } catch (IOException e) {
-            System.err.println("Error closing server socket: " + e.getMessage());
+            System.err.println(
+                "Error closing server socket: " + e.getMessage()
+            );
         }
         executorService.shutdown();
         try {
@@ -98,6 +120,7 @@ public class BenchServer {
      * Client handler - processes each client connection in a separate thread
      */
     private static class ClientHandler implements Runnable {
+
         private final SSLSocket socket;
 
         public ClientHandler(SSLSocket socket) {
@@ -107,10 +130,18 @@ public class BenchServer {
         @Override
         public void run() {
             try (
-                BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)
+                BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream())
+                );
+                PrintWriter writer = new PrintWriter(
+                    socket.getOutputStream(),
+                    true
+                )
             ) {
-                String clientInfo = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
+                String clientInfo =
+                    socket.getInetAddress().getHostAddress() +
+                    ":" +
+                    socket.getPort();
                 System.out.println("Handling client: " + clientInfo);
 
                 String line;
@@ -124,22 +155,38 @@ public class BenchServer {
                     long processingTimeMs = (endTime - startTime) / 1_000_000;
 
                     // Send acknowledgment back to client
-                    String ack = String.format("ACK|checksum=%d|size=%d|processing_time_ms=%d|status=%s",
-                            result.checksum, result.dataSize, processingTimeMs, result.status);
+                    String ack = String.format(
+                        "ACK|checksum=%d|size=%d|processing_time_ms=%d|status=%s",
+                        result.checksum,
+                        result.dataSize,
+                        processingTimeMs,
+                        result.status
+                    );
                     writer.println(ack);
 
-                    System.out.println("Processed data from " + clientInfo +
-                            " (size: " + result.dataSize + " bytes, time: " + processingTimeMs + " ms)");
+                    System.out.println(
+                        "Processed data from " +
+                            clientInfo +
+                            " (size: " +
+                            result.dataSize +
+                            " bytes, time: " +
+                            processingTimeMs +
+                            " ms)"
+                    );
                 }
-
             } catch (IOException e) {
                 System.err.println("Error handling client: " + e.getMessage());
             } finally {
                 try {
                     socket.close();
-                    System.out.println("Client disconnected: " + socket.getInetAddress().getHostAddress());
+                    System.out.println(
+                        "Client disconnected: " +
+                            socket.getInetAddress().getHostAddress()
+                    );
                 } catch (IOException e) {
-                    System.err.println("Error closing client socket: " + e.getMessage());
+                    System.err.println(
+                        "Error closing client socket: " + e.getMessage()
+                    );
                 }
             }
         }
@@ -172,7 +219,6 @@ public class BenchServer {
                 simulateCPUWork(data.length());
 
                 result.status = "SUCCESS";
-
             } catch (Exception e) {
                 result.status = "ERROR: " + e.getMessage();
             }
@@ -197,6 +243,7 @@ public class BenchServer {
      * Result of data processing
      */
     private static class ProcessingResult {
+
         long checksum;
         int dataSize;
         String status;
@@ -241,10 +288,12 @@ public class BenchServer {
         BenchServer server = new BenchServer(port);
 
         // Add shutdown hook for graceful shutdown
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nShutdown signal received...");
-            server.stop();
-        }));
+        Runtime.getRuntime().addShutdownHook(
+            new Thread(() -> {
+                System.out.println("\nShutdown signal received...");
+                server.stop();
+            })
+        );
 
         try {
             server.start(keystorePath, keystorePassword);
@@ -258,11 +307,21 @@ public class BenchServer {
     private static void printUsage() {
         System.out.println("Usage: java server.BenchServer [OPTIONS]");
         System.out.println("\nOptions:");
-        System.out.println("  -p, --port <port>           Server port (default: 8443)");
-        System.out.println("  -k, --keystore <path>       Path to keystore file (default: server.keystore)");
-        System.out.println("  -pw, --password <password>  Keystore password (default: changeit)");
-        System.out.println("  -h, --help                  Display this help message");
+        System.out.println(
+            "  -p, --port <port>           Server port (default: 8443)"
+        );
+        System.out.println(
+            "  -k, --keystore <path>       Path to keystore file (default: server.keystore)"
+        );
+        System.out.println(
+            "  -pw, --password <password>  Keystore password (default: changeit)"
+        );
+        System.out.println(
+            "  -h, --help                  Display this help message"
+        );
         System.out.println("\nExample:");
-        System.out.println("  java server.BenchServer --port 8443 --keystore server.keystore --password mypassword");
+        System.out.println(
+            "  java server.BenchServer --port 8443 --keystore server.keystore --password mypassword"
+        );
     }
 }
