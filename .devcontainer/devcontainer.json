@@ -32,7 +32,8 @@
         "ghcr.io/jungaretti/features/make:1": {},
         "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
             "packages": "gcc"
-        }
+        },
+        "ghcr.io/audacioustux/devcontainers/graalvm:1": {}
     },
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
