@@ -80,3 +80,6 @@ __pycache__/
 
 # Benchmark results
 benchmark-results/
+
+# venv
+.venv/

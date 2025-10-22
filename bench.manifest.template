@@ -1,7 +1,7 @@
 # Copyright (C) 2024 Gramine contributors
 # SPDX-License-Identifier: BSD-3-Clause
 
-libos.entrypoint = "{{ entrypoint }}"
+libos.entrypoint = "{{ java_home }}/bin/java"
 
 loader.log_level = "{{ log_level }}"
 
@@ -10,15 +10,15 @@ loader.insecure__use_cmdline_argv = true
 loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:{{ java_home }}/lib"
 
 fs.mounts = [
-  { uri = "file:{{ gramine.runtimedir() }}", path = "/lib" },
-  { uri = "file:{{ arch_libdir }}", path = "{{ arch_libdir }}" },
-  { uri = "file:/usr", path = "/usr" },
-  { uri = "file:{{ java_home }}", path = "{{ java_home }}" },
-  { uri = "file:target/classes", path = "/app/classes" },
+  { uri = "file:{{ gramine.runtimedir() }}",    path = "/lib" },
+  { uri = "file:{{ arch_libdir }}",             path = "{{ arch_libdir }}" },
+  { uri = "file:/usr",                          path = "/usr" },
+  { uri = "file:{{ java_home }}",              path = "{{ java_home }}" },
+  { uri = "file:target/classes",               path = "/app/classes" },
 ]
 
 # If using 64G or greater enclave sizes, the JVM flag `-Xmx8G` can be omitted in gramine-sgx.
-sgx.enclave_size = "16G"
+sgx.enclave_size = "8G"
 
 # SGX needs minimum 64 threads for loading OpenJDK runtime.
 sgx.max_threads = {{ '1' if env.get('EDMM', '0') == '1' else '64' }}
@@ -29,11 +29,11 @@ sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
 sgx.use_exinfo = true
 
 sgx.trusted_files = [
-  "file:{{ entrypoint }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ arch_libdir }}/",
   "file:/usr/{{ arch_libdir }}/",
   "file:{{ java_home }}/lib/",
+  "file:{{ java_home }}/bin/java",
   "file:{{ java_home }}/conf/security/java.security",
   "file:{{ java_home }}/conf/security/java.policy",
   "file:{{ java_home }}/conf/security/policy/",

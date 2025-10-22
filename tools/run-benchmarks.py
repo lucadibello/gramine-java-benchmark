@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 
 """
-Benchmark Test Runner for TLS Server - Normal JVM vs Gramine-SGX Comparison
-This script runs benchmarks against both normal JVM and Gramine-SGX to measure overhead
+Scientific Benchmark Suite for TLS Server Performance Analysis
+Performs strong and weak scaling studies across 4 server variants:
+1. JVM on local machine (baseline)
+2. JVM inside Gramine-SGX
+3. GraalVM native (dynamic + glibc) inside Gramine-SGX
+4. GraalVM native (static + musl) inside Gramine-SGX
+
+Scaling Analysis:
+- Strong scaling: Fixed total workload, varying number of clients (2^0 to 2^4)
+- Weak scaling: Fixed workload per client, varying number of clients
+- Speedup calculation: Baseline performance / Variant performance
 """
 
 import argparse
 import csv
+import json
 import re
 import signal
 import socket
@@ -16,7 +26,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List, Tuple
 
 
 # ANSI color codes
@@ -25,6 +35,8 @@ class Colors:
     GREEN: str = "\033[0;32m"
     YELLOW: str = "\033[1;33m"
     BLUE: str = "\033[0;34m"
+    CYAN: str = "\033[0;36m"
+    MAGENTA: str = "\033[0;35m"
     NC: str = "\033[0m"  # No Color
 
 
@@ -34,15 +46,33 @@ class Config:
         self.script_dir: Path = Path(__file__).parent.resolve()
         self.project_dir: Path = self.script_dir.parent
         self.classes_dir: Path = self.project_dir / "target" / "classes"
+        self.bin_dir: Path = self.project_dir / "target" / "bin"
+
+        # Java paths
+        self.java_home: Path = Path("/usr/java/graalvm")
+        self.java_bin: Path = self.java_home / "bin" / "java"
 
         self.server_host: str = "localhost"
-        self.normal_server_port: int = 9443
-        self.sgx_server_port: int = 9444
-        self.results_dir: Path = self.project_dir / "benchmark-results"
-        self.comparison_dir: Path = self.results_dir / "comparison"
 
-        self.normal_server_process: subprocess.Popen[bytes] | None = None
-        self.sgx_server_process: subprocess.Popen[bytes] | None = None
+        # Different ports for different server variants
+        self.port_jvm_local: int = 9443
+        self.port_jvm_gramine: int = 9444
+        self.port_native_dynamic: int = 9445
+        self.port_native_static: int = 9446
+
+        self.results_dir: Path = self.project_dir / "scaling-results"
+        self.timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Scaling parameters (2^0 to 2^4 = 1, 2, 4, 8, 16 clients)
+        self.client_counts: List[int] = [2**i for i in range(5)]
+        self.max_threads: int = 16
+
+        # Active server processes
+        self.server_process: Optional[subprocess.Popen[bytes]] = None
+        self.current_variant: Optional[str] = None
+
+        # Sudo management for SGX
+        self.use_sudo: bool = True
 
 
 # Logging functions
@@ -63,9 +93,15 @@ def print_error(msg: str):
 
 
 def print_header(msg: str):
-    print(f"\n{Colors.GREEN}{'=' * 40}{Colors.NC}")
-    print(f"{Colors.GREEN}{msg}{Colors.NC}")
-    print(f"{Colors.GREEN}{'=' * 40}{Colors.NC}\n")
+    print(f"\n{Colors.CYAN}{'=' * 70}{Colors.NC}")
+    print(f"{Colors.CYAN}{msg:^70}{Colors.NC}")
+    print(f"{Colors.CYAN}{'=' * 70}{Colors.NC}\n")
+
+
+def print_subheader(msg: str):
+    print(f"\n{Colors.MAGENTA}{'─' * 70}{Colors.NC}")
+    print(f"{Colors.MAGENTA}{msg}{Colors.NC}")
+    print(f"{Colors.MAGENTA}{'─' * 70}{Colors.NC}\n")
 
 
 # Server management
@@ -76,7 +112,6 @@ class ServerManager:
     def check_server(self, port: int, timeout: int = 3) -> bool:
         """Check if server is running and accepting TLS connections"""
         try:
-            # Try to establish a TLS connection
             context = ssl.create_default_context()
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
@@ -89,1015 +124,1372 @@ class ServerManager:
         except (socket.error, ssl.SSLError, ConnectionRefusedError, TimeoutError):
             return False
 
-    def check_server_verbose(self, port: int) -> bool:
-        """Check server with detailed feedback"""
-        print_info(
-            f"Checking if server is running on {self.config.server_host}:{port}..."
-        )
+    def wait_for_server(self, port: int, max_attempts: int = 60) -> Tuple[bool, float]:
+        """
+        Wait for server to start (increased timeout for SGX)
+        Returns: (success: bool, startup_time: float in seconds)
+        """
+        print_info(f"Waiting for server on port {port}...")
+        start_time = time.time()
 
-        if self.check_server(port):
-            print_success("Server is running and accepting TLS connections")
-            return True
-        else:
-            print_error(
-                f"Server is not running or not accepting connections on port {port}"
-            )
-            return False
+        for attempt in range(1, max_attempts + 1):
+            if self.check_server(port):
+                startup_time = time.time() - start_time
+                print_success(f"Server is ready (startup time: {startup_time:.2f}s)")
+                time.sleep(2)  # Stabilization time
+                return True, startup_time
 
-    def wait_for_server(self, port: int, max_attempts: int = 60) -> bool:
-        """Wait for server to start (increased timeout for SGX)"""
-        print_info("Waiting for server to start...")
-        print_info("Press Ctrl+C to cancel")
+            if attempt % 10 == 0:
+                print_info(f"Still waiting... ({attempt}/{max_attempts}s)")
 
-        try:
-            for attempt in range(1, max_attempts + 1):
-                if self.check_server(port):
-                    print_success("Server is ready")
-                    time.sleep(2)  # Give it extra time to be fully ready
-                    return True
+            time.sleep(1)
 
-                if attempt % 10 == 0:
-                    print_info(f"Still waiting... (attempt {attempt}/{max_attempts})")
+        print_error(f"Server did not start within {max_attempts} seconds")
+        return False, 0.0
 
-                # Use shorter sleep intervals to be more responsive to Ctrl+C
-                for _ in range(10):
-                    time.sleep(0.1)
+    def start_jvm_local(self) -> bool:
+        """Start normal JVM server (baseline)"""
+        print_info("Starting JVM server (local/baseline)...")
 
-            print_error(f"Server did not start within {max_attempts} seconds")
-            return False
-        except KeyboardInterrupt:
-            print("\n")
-            print_info("Server startup interrupted by user")
-            return False
-
-    def test_server_health(self, port: int) -> bool:
-        """Test server health with a simple message"""
-        print_info("Testing server health...")
-
-        client_class = self.config.classes_dir / "client" / "BenchClient.class"
-        truststore = self.config.project_dir / "client.truststore"
-
-        if not client_class.exists() or not truststore.exists():
+        if self.check_server(self.config.port_jvm_local):
             print_warning(
-                "Cannot perform health check: client classes or truststore not found"
+                f"Server already running on port {self.config.port_jvm_local}"
             )
-            return True  # Don't fail if we can't test
+            return False
 
-        try:
-            result = subprocess.run(
-                [
-                    "java",
-                    "-cp",
-                    str(self.config.classes_dir),
-                    "client.BenchClient",
-                    "--host",
-                    self.config.server_host,
-                    "--port",
-                    str(port),
-                    "--messages",
-                    "3",
-                    "--truststore",
-                    str(truststore),
-                    "--truststore-password",
-                    "changeit",
-                ],
+        # Check certificates
+        keystore = self.config.project_dir / "server.keystore"
+        if not keystore.exists():
+            print_info("Generating TLS certificates...")
+            subprocess.run(
+                ["bash", "tools/generate-certs.sh"],
+                cwd=self.config.project_dir,
+                check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=10,
             )
 
-            if result.returncode == 0:
-                print_success("Server health check passed")
+        # Start server
+        try:
+            process = subprocess.Popen(
+                [
+                    str(self.config.java_bin),
+                    "-cp",
+                    str(self.config.classes_dir),
+                    "BenchServer",
+                    "--port",
+                    str(self.config.port_jvm_local),
+                    "--keystore",
+                    str(keystore),
+                    "--password",
+                    "changeit",
+                ],
+                cwd=self.config.project_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            self.config.server_process = process
+            self.config.current_variant = "jvm-local"
+
+            success, startup_time = self.wait_for_server(self.config.port_jvm_local)
+            if success:
+                print_success(
+                    f"JVM server started (PID: {process.pid}, startup: {startup_time:.2f}s)"
+                )
                 return True
             else:
-                print_error("Server health check failed")
-                return False
-        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-            print_error("Server health check failed")
-            return False
-
-    def start_normal_server(self) -> bool:
-        """Start normal JVM server"""
-        print_info(
-            f"Starting normal JVM server on port {self.config.normal_server_port}..."
-        )
-
-        try:
-            # Check if server is already running
-            if self.check_server(self.config.normal_server_port):
-                print_warning(
-                    f"A server is already running on port {self.config.normal_server_port}"
-                )
-                print_info("Please stop the existing server to continue with testing.")
+                self.stop_server()
                 return False
 
-            # Check if certificates exist
-            keystore = self.config.project_dir / "server.keystore"
-            truststore = self.config.project_dir / "client.truststore"
-
-            if not keystore.exists() or not truststore.exists():
-                print_info("Generating TLS certificates...")
-                _ = subprocess.run(
-                    ["make", "certs"], cwd=self.config.project_dir, check=True
-                )
-
-            # Start server
-            self.config.results_dir.mkdir(parents=True, exist_ok=True)
-            log_file = self.config.results_dir / "normal_server.log"
-
-            with open(log_file, "w") as log:
-                self.config.normal_server_process = subprocess.Popen(
-                    [
-                        "java",
-                        "-cp",
-                        str(self.config.classes_dir),
-                        "server.BenchServer",
-                        "--port",
-                        str(self.config.normal_server_port),
-                    ],
-                    cwd=self.config.project_dir,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                )
-
-            try:
-                if self.wait_for_server(self.config.normal_server_port):
-                    print_success(
-                        f"Normal JVM server started (PID: {self.config.normal_server_process.pid})"
-                    )
-                    if self.test_server_health(self.config.normal_server_port):
-                        return True
-                    else:
-                        print_error("Normal JVM server started but failed health check")
-                        self.stop_normal_server()
-                        return False
-                else:
-                    print_error("Failed to start normal JVM server")
-                    if self.config.normal_server_process:
-                        self.stop_normal_server()
-                    return False
-            except KeyboardInterrupt:
-                print("\n")
-                print_info("Normal server startup interrupted by user")
-                if self.config.normal_server_process:
-                    self.stop_normal_server()
-                raise
-        except KeyboardInterrupt:
-            print("\n")
-            print_info("Normal server startup cancelled by user")
-            return False
-
-    def stop_normal_server(self):
-        """Stop normal JVM server"""
-        if self.config.normal_server_process is None:
-            return
-
-        try:
-            print_info(
-                f"Stopping normal JVM server (PID: {self.config.normal_server_process.pid})"
-            )
-            self.config.normal_server_process.terminate()
-
-            # Wait up to 10 seconds for graceful shutdown
-            try:
-                _ = self.config.normal_server_process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                print_warning("Force killing normal JVM server")
-                self.config.normal_server_process.kill()
-                _ = self.config.normal_server_process.wait()
-
-            print_success("Normal server stopped")
-            self.config.normal_server_process = None
-            time.sleep(2)  # Wait for port to be released
         except Exception as e:
-            print_error(f"Error stopping normal server: {e}")
+            print_error(f"Failed to start JVM server: {e}")
+            return False
 
-    def start_sgx_server(self) -> bool:
-        """Start Gramine-SGX server with sudo"""
-        print_info(
-            f"Starting Gramine-SGX server on port {self.config.sgx_server_port}..."
+    def start_jvm_gramine(self) -> bool:
+        """Start JVM inside Gramine-SGX"""
+        print_info("Starting JVM inside Gramine-SGX...")
+
+        if self.check_server(self.config.port_jvm_gramine):
+            print_warning(
+                f"Server already running on port {self.config.port_jvm_gramine}"
+            )
+            return False
+
+        # Build manifest (clean first to ensure fresh build)
+        print_info("Building Gramine manifest for JVM...")
+        subprocess.run(
+            ["make", "clean"],
+            cwd=self.config.project_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            [
+                "make",
+                "APP_NAME=bench",
+                "STATIC_NATIVE=0",
+                "SGX=1",
+                "all",
+            ],
+            cwd=self.config.project_dir,
+            check=True,
         )
 
+        # Start server
         try:
-            # Check if server is already running
-            if self.check_server(self.config.sgx_server_port):
-                print_warning(
-                    f"A server is already running on port {self.config.sgx_server_port}"
+            cmd = [
+                "gramine-sgx",
+                "bench",
+                "-cp",
+                "/app/classes",
+                "BenchServer",
+                "--port",
+                str(self.config.port_jvm_gramine),
+                "--keystore",
+                "server.keystore",
+                "--password",
+                "changeit",
+            ]
+
+            if self.config.use_sudo:
+                cmd = ["sudo", "-n"] + cmd
+
+            process = subprocess.Popen(
+                cmd,
+                cwd=self.config.project_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            self.config.server_process = process
+            self.config.current_variant = "jvm-gramine"
+
+            success, startup_time = self.wait_for_server(
+                self.config.port_jvm_gramine, max_attempts=200
+            )
+            if success:
+                print_success(
+                    f"JVM-Gramine server started (PID: {process.pid}, startup: {startup_time:.2f}s)"
                 )
-                print_info("The existing SGX server will be used for this test.")
                 return True
+            else:
+                self.stop_server()
+                return False
 
-            # Check if SGX manifest is built
-            manifest = self.config.project_dir / "bench.manifest.sgx"
-            if not manifest.exists():
-                print_warning("Gramine-SGX manifest not found. Building it now...")
-                try:
-                    _ = subprocess.run(
-                        ["make", "all", "SGX=1"],
-                        cwd=self.config.project_dir,
-                        check=True,
-                    )
-                except subprocess.CalledProcessError:
-                    print_error("Failed to build SGX manifest")
-                    return False
-
-            # Start server with sudo
-            self.config.results_dir.mkdir(parents=True, exist_ok=True)
-            log_file = self.config.results_dir / "sgx_server.log"
-
-            print_info("Starting SGX server (this may take 1-2 minutes)...")
-            print_info("Note: sudo password may be required")
-
-            with open(log_file, "w") as log:
-                self.config.sgx_server_process = subprocess.Popen(
-                    [
-                        "sudo",
-                        "gramine-sgx",
-                        "bench",
-                        "-cp",
-                        "/app/classes",
-                        "server.BenchServer",
-                        "--port",
-                        str(self.config.sgx_server_port),
-                    ],
-                    cwd=self.config.project_dir,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                )
-
-            try:
-                if self.wait_for_server(self.config.sgx_server_port, max_attempts=360):
-                    print_success(
-                        f"Gramine-SGX server started (PID: {self.config.sgx_server_process.pid})"
-                    )
-                    if self.test_server_health(self.config.sgx_server_port):
-                        return True
-                    else:
-                        print_error(
-                            "Gramine-SGX server started but failed health check"
-                        )
-                        self.stop_sgx_server()
-                        return False
-                else:
-                    print_error("Failed to start Gramine-SGX server")
-                    if self.config.sgx_server_process:
-                        self.stop_sgx_server()
-                    return False
-            except KeyboardInterrupt:
-                print("\n")
-                print_info("SGX server startup interrupted by user")
-                if self.config.sgx_server_process:
-                    self.stop_sgx_server()
-                raise
-        except KeyboardInterrupt:
-            print("\n")
-            print_info("SGX server startup cancelled by user")
+        except Exception as e:
+            print_error(f"Failed to start JVM-Gramine server: {e}")
             return False
 
-    def stop_sgx_server(self):
-        """Stop Gramine-SGX server"""
-        if self.config.sgx_server_process is None:
-            return
+    def start_native_dynamic(self) -> bool:
+        """Start GraalVM native (dynamic + glibc) inside Gramine-SGX"""
+        print_info("Starting GraalVM native-dynamic inside Gramine-SGX...")
 
+        if self.check_server(self.config.port_native_dynamic):
+            print_warning(
+                f"Server already running on port {self.config.port_native_dynamic}"
+            )
+            return False
+
+        # Build native image and manifest if needed
+        manifest = self.config.project_dir / "native-bench-dynamic.manifest.sgx"
+        native_server = self.config.bin_dir / "BenchServer"
+
+        if not manifest.exists() or not native_server.exists():
+            print_info("Building native-dynamic image and manifest...")
+            subprocess.run(
+                ["make", "clean"],
+                cwd=self.config.project_dir,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "make",
+                    "APP_NAME=native-bench-dynamic",
+                    "STATIC_NATIVE=0",
+                    "SGX=1",
+                    "all",
+                ],
+                cwd=self.config.project_dir,
+                check=True,
+            )
+
+        # Start server
         try:
-            print_info(
-                f"Stopping Gramine-SGX server (PID: {self.config.sgx_server_process.pid})"
+            # Set environment variable for the manifest to use BenchServer
+            env = {**subprocess.os.environ, "APP_BIN": "BenchServer"}
+
+            cmd = [
+                "gramine-sgx",
+                "native-bench-dynamic",
+                "--port",
+                str(self.config.port_native_dynamic),
+                "--keystore",
+                "server.keystore",
+                "--password",
+                "changeit",
+            ]
+
+            if self.config.use_sudo:
+                cmd = ["sudo", "-n", "-E"] + cmd
+
+            process = subprocess.Popen(
+                cmd,
+                cwd=self.config.project_dir,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-            # Use sudo to kill the process since it was started with sudo
-            _ = subprocess.run(
-                ["sudo", "kill", str(self.config.sgx_server_process.pid)], check=False
-            )
+            self.config.server_process = process
+            self.config.current_variant = "native-dynamic"
 
-            # Wait up to 15 seconds for graceful shutdown
-            try:
-                _ = self.config.sgx_server_process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                print_warning("Force killing Gramine-SGX server")
-                _ = subprocess.run(
-                    ["sudo", "kill", "-9", str(self.config.sgx_server_process.pid)],
-                    check=False,
+            success, startup_time = self.wait_for_server(
+                self.config.port_native_dynamic, max_attempts=90
+            )
+            if success:
+                print_success(
+                    f"Native-dynamic server started (PID: {process.pid}, startup: {startup_time:.2f}s)"
                 )
+                return True
+            else:
+                self.stop_server()
+                return False
+
+        except Exception as e:
+            print_error(f"Failed to start native-dynamic server: {e}")
+            return False
+
+    def start_native_static(self) -> bool:
+        """Start GraalVM native (static + musl) inside Gramine-SGX"""
+        print_info("Starting GraalVM native-static inside Gramine-SGX...")
+
+        if self.check_server(self.config.port_native_static):
+            print_warning(
+                f"Server already running on port {self.config.port_native_static}"
+            )
+            return False
+
+        # Build native image and manifest if needed
+        manifest = self.config.project_dir / "native-bench-static.manifest.sgx"
+        native_server = self.config.bin_dir / "BenchServer"
+
+        if not manifest.exists() or not native_server.exists():
+            print_info("Building native-static image and manifest...")
+            subprocess.run(
+                ["make", "clean"],
+                cwd=self.config.project_dir,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "make",
+                    "APP_NAME=native-bench-static",
+                    "STATIC_NATIVE=1",
+                    "SGX=1",
+                    "all",
+                ],
+                cwd=self.config.project_dir,
+                check=True,
+            )
+
+        # Start server
+        try:
+            env = {**subprocess.os.environ, "APP_BIN": "BenchServer"}
+
+            cmd = [
+                "gramine-sgx",
+                "native-bench-static",
+                "--port",
+                str(self.config.port_native_static),
+                "--keystore",
+                "server.keystore",
+                "--password",
+                "changeit",
+            ]
+
+            if self.config.use_sudo:
+                cmd = ["sudo", "-n", "-E"] + cmd
+
+            process = subprocess.Popen(
+                cmd,
+                cwd=self.config.project_dir,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            self.config.server_process = process
+            self.config.current_variant = "native-static"
+
+            success, startup_time = self.wait_for_server(
+                self.config.port_native_static, max_attempts=90
+            )
+            if success:
+                print_success(
+                    f"Native-static server started (PID: {process.pid}, startup: {startup_time:.2f}s)"
+                )
+                return True
+            else:
+                self.stop_server()
+                return False
+
+        except Exception as e:
+            print_error(f"Failed to start native-static server: {e}")
+            return False
+
+    def stop_server(self):
+        """Stop the currently running server"""
+        if self.config.server_process:
+            print_info(f"Stopping {self.config.current_variant} server...")
+            try:
+                self.config.server_process.terminate()
                 try:
-                    _ = self.config.sgx_server_process.wait(timeout=5)
+                    self.config.server_process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    pass
-
-            print_success("Gramine-SGX server stopped")
-            self.config.sgx_server_process = None
-            time.sleep(2)  # Wait for port to be released
-        except Exception as e:
-            print_error(f"Error stopping SGX server: {e}")
-
-
-# Benchmark runner
-class BenchmarkRunner:
-    def __init__(self, config: Config, server_manager: ServerManager):
-        self.config: Config = config
-        self.server_manager: ServerManager = server_manager
-
-    def run_benchmark(
-        self, server_type: str, name: str, clients: int, messages: int
-    ) -> bool:
-        """Run a benchmark scenario"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = self.config.results_dir / server_type
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / f"{name}_{timestamp}.txt"
-
-        # Determine port
-        port = (
-            self.config.normal_server_port
-            if server_type == "normal"
-            else self.config.sgx_server_port
-        )
-
-        print_header(f"Running [{server_type}]: {name}")
-        print_info(f"Clients: {clients}, Messages per client: {messages}")
-        print_info(f"Server port: {port}")
-        print_info(f"Results will be saved to: {output_file}")
-
-        truststore = self.config.project_dir / "client.truststore"
-
-        # Build command
-        cmd = [
-            "java",
-            "-cp",
-            str(self.config.classes_dir),
-            "client.BenchClient",
-            "--host",
-            self.config.server_host,
-            "--port",
-            str(port),
-            "--messages",
-            str(messages),
-            "--truststore",
-            str(truststore),
-            "--truststore-password",
-            "changeit",
-        ]
-
-        if clients > 1:
-            cmd.extend(["--load-test", "--clients", str(clients)])
-
-        # Run benchmark
-        try:
-            with open(output_file, "w") as f:
-                result = subprocess.run(
-                    cmd,
-                    cwd=self.config.project_dir,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                )
-
-                # Write to file and display
-                output = result.stdout
-                _ = f.write(output)
-                print(output)
-
-                if result.returncode == 0:
-                    print_success(f"Benchmark completed [{server_type}]: {name}")
-                    return True
-                else:
-                    print_error(f"Benchmark failed [{server_type}]: {name}")
-                    return False
-        except KeyboardInterrupt:
-            print("\n")
-            print_info("Benchmark interrupted by user")
-            return False
-        except Exception as e:
-            print_error(f"Error running benchmark: {e}")
-            return False
-
-    def run_comparison_benchmark(self, name: str, clients: int, messages: int) -> bool:
-        """Run benchmark against both server types"""
-        print_header(f"Comparison Benchmark: {name}")
-
-        # Test normal JVM
-        print_info("Testing with normal JVM...")
-        if not self.server_manager.start_normal_server():
-            return False
-
-        time.sleep(2)  # Stabilization time
-        normal_result = self.run_benchmark("normal", name, clients, messages)
-        self.server_manager.stop_normal_server()
-        time.sleep(3)  # Cool-down
-
-        # Test Gramine-SGX
-        print_info("Testing with Gramine-SGX...")
-        if not self.server_manager.start_sgx_server():
-            return False
-
-        time.sleep(2)  # Stabilization time
-        sgx_result = self.run_benchmark("sgx", name, clients, messages)
-        self.server_manager.stop_sgx_server()
-        time.sleep(3)  # Cool-down
-
-        if normal_result and sgx_result:
-            print_success(f"Comparison benchmark completed: {name}")
-            return True
-        else:
-            print_error(f"One or both benchmarks failed: {name}")
-            return False
-
-    def run_all_benchmarks(self) -> bool:
-        """Run all comparison benchmarks"""
-        print_header("Running All Comparison Benchmarks: Normal JVM vs Gramine-SGX")
-
-        (self.config.results_dir / "normal").mkdir(parents=True, exist_ok=True)
-        (self.config.results_dir / "sgx").mkdir(parents=True, exist_ok=True)
-        self.config.comparison_dir.mkdir(parents=True, exist_ok=True)
-
-        # Check dependencies
-        if not (self.config.classes_dir / "client" / "BenchClient.class").exists():
-            print_error("Classes not found. Please run 'make all' first.")
-            return False
-
-        # Warmup
-        print_info("Running warmup test with normal JVM...")
-        if self.server_manager.start_normal_server():
-            _ = self.run_benchmark("normal", "warmup", 1, 10)
-            self.server_manager.stop_normal_server()
-            time.sleep(3)
-
-        # Benchmark scenarios
-        scenarios = [
-            ("scenario1_single_client_low", 1, 50),
-            ("scenario2_single_client_medium", 1, 200),
-            ("scenario3_single_client_high", 1, 500),
-            ("scenario4_low_concurrency", 5, 100),
-            ("scenario5_medium_concurrency", 10, 100),
-            ("scenario6_high_concurrency", 20, 100),
-            ("scenario7_very_high_concurrency", 50, 50),
-        ]
-
-        for name, clients, messages in scenarios:
-            _ = self.run_comparison_benchmark(name, clients, messages)
-
-        print_warning("Starting stress test - this may take a while...")
-        _ = self.run_comparison_benchmark("scenario8_stress_test", 100, 100)
-
-        print_header("All Comparison Benchmarks Complete")
-        print_success(f"Results saved to: {self.config.results_dir}")
-
-        # Generate comparison report
-        reporter = ReportGenerator(self.config)
-        reporter.generate_comparison_report()
-
-        return True
+                    print_warning("Server didn't stop gracefully, forcing...")
+                    self.config.server_process.kill()
+                    self.config.server_process.wait()
+                print_success("Server stopped")
+            except Exception as e:
+                print_error(f"Error stopping server: {e}")
+            finally:
+                self.config.server_process = None
+                self.config.current_variant = None
 
 
-# Report generator
-class ReportGenerator:
-    def __init__(self, config: Config):
-        self.config: Config = config
-
-    def extract_metrics(self, file_path: Path) -> dict[str, Optional[float]]:
-        """Extract performance metrics from benchmark result file"""
-        metrics: dict[str, Optional[float]] = {
+# Benchmark metrics extractor
+class MetricsExtractor:
+    @staticmethod
+    def extract_from_output(output: str) -> Dict[str, Optional[float]]:
+        """Extract performance metrics from benchmark output"""
+        metrics: Dict[str, Optional[float]] = {
             "throughput": None,
             "avg_latency": None,
+            "min_latency": None,
+            "max_latency": None,
+            "p50_latency": None,
+            "p95_latency": None,
+            "p99_latency": None,
             "total_time": None,
             "total_messages": None,
+            "success_rate": None,
         }
 
-        if not file_path.exists():
-            return metrics
-
         try:
-            with open(file_path, "r") as f:
-                content = f.read()
-
-            # Extract throughput
-            match = re.search(r"Throughput:\s+(\d+\.?\d*)", content)
+            # Throughput (messages/second)
+            match = re.search(r"Throughput:\s+(\d+\.?\d*)", output)
             if match:
                 metrics["throughput"] = float(match.group(1))
             else:
-                match = re.search(r"(\d+\.?\d*)\s+messages/second", content)
+                match = re.search(
+                    r"(\d+\.?\d*)\s+messages?/s(?:ec(?:ond)?)?", output, re.IGNORECASE
+                )
                 if match:
                     metrics["throughput"] = float(match.group(1))
 
-            # Extract average latency
-            match = re.search(r"Average latency:\s+(\d+\.?\d*)\s+ms", content)
+            # Latencies (ms)
+            match = re.search(r"Average latency:\s+(\d+\.?\d*)\s*ms", output)
             if match:
                 metrics["avg_latency"] = float(match.group(1))
 
-            # Extract total time
-            match = re.search(r"Total time:\s+(\d+\.?\d*)\s+ms", content)
+            match = re.search(r"Min(?:imum)? latency:\s+(\d+\.?\d*)\s*ms", output)
+            if match:
+                metrics["min_latency"] = float(match.group(1))
+
+            match = re.search(r"Max(?:imum)? latency:\s+(\d+\.?\d*)\s*ms", output)
+            if match:
+                metrics["max_latency"] = float(match.group(1))
+
+            match = re.search(r"P50 latency:\s+(\d+\.?\d*)\s*ms", output)
+            if match:
+                metrics["p50_latency"] = float(match.group(1))
+
+            match = re.search(r"P95 latency:\s+(\d+\.?\d*)\s*ms", output)
+            if match:
+                metrics["p95_latency"] = float(match.group(1))
+
+            match = re.search(r"P99 latency:\s+(\d+\.?\d*)\s*ms", output)
+            if match:
+                metrics["p99_latency"] = float(match.group(1))
+
+            # Total time (ms)
+            match = re.search(r"Total time:\s+(\d+\.?\d*)\s*ms", output)
             if match:
                 metrics["total_time"] = float(match.group(1))
 
-            # Extract total messages
-            match = re.search(r"Total messages (?:sent|processed):\s+(\d+)", content)
+            # Total messages
+            match = re.search(r"Total messages (?:sent|processed):\s+(\d+)", output)
             if match:
                 metrics["total_messages"] = float(match.group(1))
 
-            # Calculate throughput if not found
+            # Success rate (%)
+            match = re.search(r"Success rate:\s+(\d+\.?\d*)%", output)
+            if match:
+                metrics["success_rate"] = float(match.group(1))
+
+            # Calculate throughput if not found but we have time and messages
             if (
                 metrics["throughput"] is None
                 and metrics["total_time"]
                 and metrics["total_messages"]
+                and metrics["total_time"] > 0
             ):
                 metrics["throughput"] = (metrics["total_messages"] * 1000.0) / metrics[
                     "total_time"
                 ]
 
         except Exception as e:
-            print_error(f"Error extracting metrics from {file_path}: {e}")
+            print_error(f"Error extracting metrics: {e}")
 
         return metrics
 
-    def calculate_overhead(
-        self, baseline: Optional[float], test: Optional[float], metric_type: str
+
+# Benchmark runner
+class ScalingBenchmark:
+    def __init__(self, config: Config, server_manager: ServerManager):
+        self.config: Config = config
+        self.server_manager: ServerManager = server_manager
+        self.metrics_extractor = MetricsExtractor()
+
+    def run_single_test(
+        self,
+        variant: str,
+        port: int,
+        num_clients: int,
+        messages_per_client: int,
+        run_number: int = 1,
+    ) -> Dict[str, Any]:
+        """Run a single benchmark test"""
+
+        truststore = self.config.project_dir / "client.truststore"
+
+        cmd = [
+            str(self.config.java_bin),
+            "-cp",
+            str(self.config.classes_dir),
+            "BenchClient",
+            "--host",
+            self.config.server_host,
+            "--port",
+            str(port),
+            "--messages",
+            str(messages_per_client),
+            "--truststore",
+            str(truststore),
+            "--truststore-password",
+            "changeit",
+        ]
+
+        if num_clients > 1:
+            cmd.extend(["--load-test", "--clients", str(num_clients)])
+
+        print_info(
+            f"Run {run_number}: {num_clients} client(s) × {messages_per_client} messages = {num_clients * messages_per_client} total"
+        )
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self.config.project_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=300,  # 5 minute timeout
+            )
+
+            metrics = self.metrics_extractor.extract_from_output(result.stdout)
+
+            return {
+                "variant": variant,
+                "num_clients": num_clients,
+                "messages_per_client": messages_per_client,
+                "total_messages": num_clients * messages_per_client,
+                "run_number": run_number,
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                **metrics,
+            }
+
+        except subprocess.TimeoutExpired:
+            print_error("Benchmark timed out")
+            return {
+                "variant": variant,
+                "num_clients": num_clients,
+                "messages_per_client": messages_per_client,
+                "total_messages": num_clients * messages_per_client,
+                "run_number": run_number,
+                "success": False,
+                "error": "timeout",
+            }
+        except Exception as e:
+            print_error(f"Benchmark failed: {e}")
+            return {
+                "variant": variant,
+                "num_clients": num_clients,
+                "messages_per_client": messages_per_client,
+                "total_messages": num_clients * messages_per_client,
+                "run_number": run_number,
+                "success": False,
+                "error": str(e),
+            }
+
+    def run_strong_scaling(
+        self, variant: str, port: int, total_messages: int = 1000, num_runs: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Strong scaling: Fixed total workload, vary number of clients
+        Total work = constant, work per client = total_work / num_clients
+        """
+        print_subheader(f"Strong Scaling Test: {variant}")
+        print_info(f"Fixed total workload: {total_messages} messages")
+        print_info(f"Number of runs per configuration: {num_runs}")
+
+        results = []
+
+        for num_clients in self.config.client_counts:
+            messages_per_client = total_messages // num_clients
+
+            print(f"\n{Colors.YELLOW}Testing with {num_clients} client(s):{Colors.NC}")
+
+            for run in range(1, num_runs + 1):
+                result = self.run_single_test(
+                    variant, port, num_clients, messages_per_client, run
+                )
+                result["scaling_type"] = "strong"
+                results.append(result)
+
+                if result["success"] and result.get("throughput"):
+                    print_success(
+                        f"  Throughput: {result['throughput']:.2f} msg/s, "
+                        f"Avg Latency: {result.get('avg_latency', 0):.2f} ms"
+                    )
+
+                time.sleep(1)  # Brief pause between runs
+
+        return results
+
+    def run_weak_scaling(
+        self, variant: str, port: int, messages_per_client: int = 100, num_runs: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Weak scaling: Fixed workload per client, vary number of clients
+        Work per client = constant, total work = work_per_client × num_clients
+        """
+        print_subheader(f"Weak Scaling Test: {variant}")
+        print_info(f"Fixed workload per client: {messages_per_client} messages")
+        print_info(f"Number of runs per configuration: {num_runs}")
+
+        results = []
+
+        for num_clients in self.config.client_counts:
+            total_messages = num_clients * messages_per_client
+
+            print(
+                f"\n{Colors.YELLOW}Testing with {num_clients} client(s) ({total_messages} total messages):{Colors.NC}"
+            )
+
+            for run in range(1, num_runs + 1):
+                result = self.run_single_test(
+                    variant, port, num_clients, messages_per_client, run
+                )
+                result["scaling_type"] = "weak"
+                results.append(result)
+
+                if result["success"] and result.get("throughput"):
+                    print_success(
+                        f"  Throughput: {result['throughput']:.2f} msg/s, "
+                        f"Avg Latency: {result.get('avg_latency', 0):.2f} ms"
+                    )
+
+                time.sleep(1)
+
+        return results
+
+    def run_variant_benchmarks(
+        self,
+        variant: str,
+        strong_total: int = 1000,
+        weak_per_client: int = 100,
+        num_runs: int = 3,
+    ) -> Dict[str, Any]:
+        """Run both strong and weak scaling for a variant"""
+
+        print_header(f"Benchmarking: {variant.upper()}")
+
+        # Determine which server to start and which port to use
+        server_configs = {
+            "jvm-local": (
+                self.server_manager.start_jvm_local,
+                self.config.port_jvm_local,
+            ),
+            "jvm-gramine": (
+                self.server_manager.start_jvm_gramine,
+                self.config.port_jvm_gramine,
+            ),
+            "native-dynamic": (
+                self.server_manager.start_native_dynamic,
+                self.config.port_native_dynamic,
+            ),
+            "native-static": (
+                self.server_manager.start_native_static,
+                self.config.port_native_static,
+            ),
+        }
+
+        if variant not in server_configs:
+            print_error(f"Unknown variant: {variant}")
+            return {"variant": variant, "error": "unknown_variant"}
+
+        start_func, port = server_configs[variant]
+
+        # Start server and measure startup time
+        startup_start = time.time()
+        if not start_func():
+            print_error(f"Failed to start {variant} server")
+            return {"variant": variant, "error": "server_start_failed"}
+        startup_time = time.time() - startup_start
+
+        try:
+            # Warmup
+            print_info("Running warmup...")
+            self.run_single_test(variant, port, 1, 10, 0)
+            time.sleep(2)
+
+            # Strong scaling
+            strong_results = self.run_strong_scaling(
+                variant, port, strong_total, num_runs
+            )
+            time.sleep(3)
+
+            # Weak scaling
+            weak_results = self.run_weak_scaling(
+                variant, port, weak_per_client, num_runs
+            )
+
+            return {
+                "variant": variant,
+                "startup_time": startup_time,
+                "strong_scaling": strong_results,
+                "weak_scaling": weak_results,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        finally:
+            # Always stop the server
+            self.server_manager.stop_server()
+            time.sleep(3)  # Cool-down period
+
+
+# Results analyzer and reporter
+class ScalingAnalyzer:
+    def __init__(self, config: Config):
+        self.config = config
+
+    def calculate_speedup(
+        self,
+        baseline_value: Optional[float],
+        variant_value: Optional[float],
+        metric_type: str = "throughput",
     ) -> Optional[float]:
-        """Calculate overhead percentage"""
-        if baseline is None or test is None or baseline == 0:
+        """
+        Calculate speedup relative to baseline
+        For throughput: speedup = variant / baseline (higher is better)
+        For latency: speedup = baseline / variant (lower latency = higher speedup)
+        """
+        if baseline_value is None or variant_value is None or variant_value == 0:
             return None
 
         if metric_type == "throughput":
-            # Throughput: lower is worse
-            return ((baseline - test) / baseline) * 100
-        else:
-            # Latency/Time: higher is worse
-            return ((test - baseline) / baseline) * 100
+            return variant_value / baseline_value
+        else:  # latency or time
+            return baseline_value / variant_value
 
-    def generate_comparison_report(self):
-        """Generate comparison report from benchmark results"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = self.config.comparison_dir / f"comparison_report_{timestamp}.txt"
-        csv_file = self.config.comparison_dir / f"comparison_data_{timestamp}.csv"
+    def calculate_efficiency(
+        self, speedup: Optional[float], num_clients: int
+    ) -> Optional[float]:
+        """
+        Parallel efficiency = speedup / num_clients
+        Perfect scaling = 1.0 (100%)
+        """
+        if speedup is None or num_clients == 0:
+            return None
+        return speedup / num_clients
 
-        print_info("Generating comparison report...")
+    def aggregate_runs(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate multiple runs into mean and std dev"""
+        if not results:
+            return {}
 
-        # Collect results
-        normal_dir = self.config.results_dir / "normal"
-        sgx_dir = self.config.results_dir / "sgx"
+        # Group by num_clients
+        by_clients: Dict[int, List[Dict[str, Any]]] = {}
+        for r in results:
+            nc = r.get("num_clients", 0)
+            if nc not in by_clients:
+                by_clients[nc] = []
+            by_clients[nc].append(r)
 
-        results: list[dict[str, float | str | None]] = []
+        aggregated = []
+        for num_clients in sorted(by_clients.keys()):
+            runs = by_clients[num_clients]
 
-        # Find all normal result files
-        if normal_dir.exists():
-            for normal_file in sorted(normal_dir.glob("scenario*_*.txt")):
-                # Extract scenario name without timestamp
-                scenario_base = re.sub(r"_\d{8}_\d{6}$", "", normal_file.stem)
-                scenario_name = re.sub(r"^scenario\d+_", "", scenario_base)
+            # Extract throughputs and latencies
+            throughputs = [r["throughput"] for r in runs if r.get("throughput")]
+            latencies = [r["avg_latency"] for r in runs if r.get("avg_latency")]
 
-                # Find corresponding SGX file
-                sgx_files = list(sgx_dir.glob(f"{scenario_base}_*.txt"))
-                if sgx_files:
-                    sgx_file = sgx_files[0]
+            agg = {
+                "num_clients": num_clients,
+                "num_runs": len(runs),
+                "messages_per_client": runs[0].get("messages_per_client", 0),
+                "total_messages": runs[0].get("total_messages", 0),
+            }
 
-                    normal_metrics = self.extract_metrics(normal_file)
-                    sgx_metrics = self.extract_metrics(sgx_file)
+            if throughputs:
+                import statistics
 
-                    result: dict[str, float | None | str] = {
-                        "scenario": scenario_name,
-                        "normal_throughput": normal_metrics["throughput"],
-                        "sgx_throughput": sgx_metrics["throughput"],
-                        "normal_latency": normal_metrics["avg_latency"],
-                        "sgx_latency": sgx_metrics["avg_latency"],
-                        "normal_time": normal_metrics["total_time"],
-                        "sgx_time": sgx_metrics["total_time"],
-                    }
+                agg["throughput_mean"] = statistics.mean(throughputs)
+                if len(throughputs) > 1:
+                    agg["throughput_stdev"] = statistics.stdev(throughputs)
+                else:
+                    agg["throughput_stdev"] = 0.0
 
-                    normal_throughput = result["normal_throughput"]
-                    sgx_throughput = result["sgx_throughput"]
-                    result["throughput_overhead"] = self.calculate_overhead(
-                        normal_throughput
-                        if isinstance(normal_throughput, (float, int, type(None)))
-                        else None,
-                        sgx_throughput
-                        if isinstance(sgx_throughput, (float, int, type(None)))
-                        else None,
-                        "throughput",
-                    )
+            if latencies:
+                import statistics
 
-                    normal_latency = result["normal_latency"]
-                    sgx_latency = result["sgx_latency"]
-                    result["latency_overhead"] = self.calculate_overhead(
-                        normal_latency
-                        if isinstance(normal_latency, (float, int, type(None)))
-                        else None,
-                        sgx_latency
-                        if isinstance(sgx_latency, (float, int, type(None)))
-                        else None,
-                        "latency",
-                    )
+                agg["latency_mean"] = statistics.mean(latencies)
+                if len(latencies) > 1:
+                    agg["latency_stdev"] = statistics.stdev(latencies)
+                else:
+                    agg["latency_stdev"] = 0.0
 
-                    normal_time = result["normal_time"]
-                    sgx_time = result["sgx_time"]
-                    result["time_overhead"] = self.calculate_overhead(
-                        normal_time
-                        if isinstance(normal_time, (float, int, type(None)))
-                        else None,
-                        sgx_time
-                        if isinstance(sgx_time, (float, int, type(None)))
-                        else None,
-                        "latency",
-                    )
+            aggregated.append(agg)
 
-                    results.append(result)
+        return {"aggregated": aggregated, "raw": results}
+
+    def generate_scaling_report(self, all_results: List[Dict[str, Any]]):
+        """Generate comprehensive scaling analysis report"""
+
+        print_header("GENERATING SCALING ANALYSIS REPORT")
+
+        # Create output directory
+        output_dir = self.config.results_dir / self.config.timestamp
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save raw results as JSON
+        raw_file = output_dir / "raw_results.json"
+        with open(raw_file, "w") as f:
+            json.dump(all_results, f, indent=2)
+        print_success(f"Raw results saved to: {raw_file}")
+
+        # Process each variant
+        baseline_data = None
+        processed_variants = {}
+        startup_times = {}
+
+        for variant_result in all_results:
+            variant = variant_result.get("variant")
+            if not variant:
+                continue
+
+            strong = self.aggregate_runs(variant_result.get("strong_scaling", []))
+            weak = self.aggregate_runs(variant_result.get("weak_scaling", []))
+            startup_time = variant_result.get("startup_time", 0.0)
+
+            processed_variants[variant] = {"strong": strong, "weak": weak}
+            startup_times[variant] = startup_time
+
+            # Use jvm-local as baseline
+            if variant == "jvm-local":
+                baseline_data = processed_variants[variant]
+
+        # Generate startup times CSV
+        self._generate_startup_times_csv(output_dir, startup_times)
+
+        # Generate comparison CSV for strong scaling
+        self._generate_strong_scaling_csv(output_dir, processed_variants, baseline_data)
+
+        # Generate comparison CSV for weak scaling
+        self._generate_weak_scaling_csv(output_dir, processed_variants, baseline_data)
 
         # Generate text report
-        with open(report_file, "w") as f:
-            _ = f.write("=" * 50 + "\n")
-            _ = f.write("GRAMINE-SGX OVERHEAD ANALYSIS REPORT\n")
-            _ = f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            _ = f.write("=" * 50 + "\n\n")
+        self._generate_text_report(
+            output_dir, processed_variants, baseline_data, startup_times
+        )
 
-            _ = f.write("This report compares performance between:\n")
-            _ = f.write("- Normal JVM (Baseline)\n")
-            _ = f.write("- Gramine-SGX (Confidential Computing)\n\n")
+        print_success(f"\nAll reports saved to: {output_dir}")
 
-            _ = f.write("Overhead is calculated as:\n")
-            _ = f.write("- Throughput overhead: (Normal - SGX) / Normal * 100%\n")
-            _ = f.write("- Latency/Time overhead: (SGX - Normal) / Normal * 100%\n\n")
-            _ = f.write("=" * 50 + "\n\n")
-
-            for result in results:
-                scenario = result.get("scenario", "unknown")
-                _ = f.write(f"--- {scenario} ---\n")
-                _ = f.write(
-                    f"{'Metric':<20} | {'Normal JVM':<12} | {'Gramine-SGX':<12} | {'Overhead %':<12}\n"
-                )
-                _ = f.write(f"{'-' * 20}-+-{'-' * 12}-+-{'-' * 12}-+-{'-' * 12}\n")
-
-                normal_throughput = result.get("normal_throughput")
-                sgx_throughput = result.get("sgx_throughput")
-                throughput_overhead = result.get("throughput_overhead")
-                if (
-                    normal_throughput
-                    and sgx_throughput
-                    and throughput_overhead is not None
-                ):
-                    _ = f.write(
-                        f"{'Throughput (msg/s)':<20} | "
-                        + f"{float(normal_throughput):<12.2f} | "
-                        + f"{float(sgx_throughput):<12.2f} | "
-                        + f"{float(throughput_overhead):+11.2f}%\n"
-                    )
-
-                normal_latency = result.get("normal_latency")
-                sgx_latency = result.get("sgx_latency")
-                latency_overhead = result.get("latency_overhead")
-                if normal_latency and sgx_latency and latency_overhead is not None:
-                    _ = f.write(
-                        f"{'Avg Latency (ms)':<20} | "
-                        + f"{float(normal_latency):<12.2f} | "
-                        + f"{float(sgx_latency):<12.2f} | "
-                        + f"{float(latency_overhead):+11.2f}%\n"
-                    )
-
-                normal_time = result.get("normal_time")
-                sgx_time = result.get("sgx_time")
-                time_overhead = result.get("time_overhead")
-                if normal_time and sgx_time and time_overhead is not None:
-                    _ = f.write(
-                        f"{'Total Time (ms)':<20} | "
-                        + f"{float(normal_time):<12.2f} | "
-                        + f"{float(sgx_time):<12.2f} | "
-                        + f"{float(time_overhead):+11.2f}%\n"
-                    )
-
-                _ = f.write("\n")
-
-            _ = f.write("\n" + "=" * 50 + "\n")
-            _ = f.write("SUMMARY\n")
-            _ = f.write("=" * 50 + "\n\n")
-            _ = f.write("Key Findings:\n")
-            _ = f.write("- Positive overhead % indicates Gramine-SGX is slower\n")
-            _ = f.write(
-                "- Negative overhead % indicates Gramine-SGX is faster (rare)\n\n"
-            )
-            _ = f.write("Raw result files located at:\n")
-            _ = f.write(f"- Normal JVM: {self.config.results_dir / 'normal'}\n")
-            _ = f.write(f"- Gramine-SGX: {self.config.results_dir / 'sgx'}\n\n")
-            _ = f.write("For detailed analysis, examine individual result files.\n\n")
-
-        # Generate CSV report
-        with open(csv_file, "w", newline="") as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=[
-                    "scenario",
-                    "normal_throughput",
-                    "sgx_throughput",
-                    "throughput_overhead",
-                    "normal_latency",
-                    "sgx_latency",
-                    "latency_overhead",
-                    "normal_time",
-                    "sgx_time",
-                    "time_overhead",
-                ],
-            )
-            writer.writeheader()
-            writer.writerows(results)
-
-        # Display the report
-        with open(report_file, "r") as f:
-            print(f.read())
-
-        print_success(f"Comparison report saved to: {report_file}")
-        print_success(f"CSV data saved to: {csv_file}")
-
-
-# Interactive menu
-class InteractiveMenu:
-    def __init__(
+    def _generate_strong_scaling_csv(
         self,
-        config: Config,
-        server_manager: ServerManager,
-        runner: BenchmarkRunner,
-        reporter: ReportGenerator,
+        output_dir: Path,
+        variants: Dict[str, Any],
+        baseline: Optional[Dict[str, Any]],
     ):
-        self.config: Config = config
-        self.server_manager: ServerManager = server_manager
-        self.runner: BenchmarkRunner = runner
-        self.reporter: ReportGenerator = reporter
+        """Generate CSV for strong scaling analysis"""
 
-    def show_menu(self):
-        """Display interactive menu"""
-        print("\033[2J\033[H")  # Clear screen
-        print_header("TLS Benchmark Comparison Tool - Normal JVM vs Gramine-SGX")
-        print("1.  Run comparison warmup test")
-        print("2.  Run single client comparison (100 messages)")
-        print("3.  Run low concurrency comparison (5 clients, 100 messages each)")
-        print("4.  Run medium concurrency comparison (10 clients, 100 messages each)")
-        print("5.  Run high concurrency comparison (20 clients, 100 messages each)")
-        print("6.  Run stress test comparison (50 clients, 200 messages each)")
-        print("7.  Run ALL comparison benchmarks")
-        print("8.  Test normal JVM server only")
-        print("9.  Test Gramine-SGX server only")
-        print("10. View results directory")
-        print("11. Generate comparison report from existing results")
-        print("0.  Exit")
-        print()
+        csv_file = output_dir / "strong_scaling.csv"
 
-    def run(self):
-        """Run interactive menu"""
-        print_info("Press Ctrl+C at any time to exit")
-        while True:
-            try:
-                self.show_menu()
-                choice = input("Select option [0-11]: ").strip()
-            except (KeyboardInterrupt, EOFError):
-                print("\n")
-                print_info("Exiting interactive mode...")
-                break
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
 
-            try:
-                if choice == "1":
-                    _ = self.runner.run_comparison_benchmark("warmup", 1, 10)
+            # Header
+            header = [
+                "num_clients",
+                "variant",
+                "throughput_mean",
+                "throughput_stdev",
+                "latency_mean",
+                "latency_stdev",
+                "speedup_throughput",
+                "speedup_latency",
+                "efficiency_throughput",
+                "efficiency_latency",
+            ]
+            writer.writerow(header)
 
-                elif choice == "2":
-                    _ = self.runner.run_comparison_benchmark("single_client", 1, 100)
+            # Get baseline throughput/latency for each client count
+            baseline_lookup = {}
+            if baseline:
+                for agg in baseline.get("strong", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
+                    baseline_lookup[nc] = {
+                        "throughput": agg.get("throughput_mean"),
+                        "latency": agg.get("latency_mean"),
+                    }
 
-                elif choice == "3":
-                    _ = self.runner.run_comparison_benchmark("low_concurrency", 5, 100)
+            # Write data for each variant
+            for variant_name in sorted(variants.keys()):
+                variant_data = variants[variant_name]
 
-                elif choice == "4":
-                    _ = self.runner.run_comparison_benchmark(
-                        "medium_concurrency", 10, 100
-                    )
+                for agg in variant_data.get("strong", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
 
-                elif choice == "5":
-                    _ = self.runner.run_comparison_benchmark(
-                        "high_concurrency", 20, 100
-                    )
+                    # Calculate speedups
+                    speedup_tp = None
+                    speedup_lat = None
+                    eff_tp = None
+                    eff_lat = None
 
-                elif choice == "6":
-                    _ = self.runner.run_comparison_benchmark("stress_test", 50, 200)
+                    if nc in baseline_lookup:
+                        baseline_tp = baseline_lookup[nc]["throughput"]
+                        baseline_lat = baseline_lookup[nc]["latency"]
 
-                elif choice == "7":
-                    _ = self.runner.run_all_benchmarks()
-
-                elif choice == "8":
-                    print_info("Testing normal JVM only...")
-                    if self.server_manager.start_normal_server():
-                        _ = self.server_manager.check_server_verbose(
-                            self.config.normal_server_port
+                        speedup_tp = self.calculate_speedup(
+                            baseline_tp, agg.get("throughput_mean"), "throughput"
                         )
-                        _ = self.runner.run_benchmark("normal", "test_normal", 1, 50)
-                        self.server_manager.stop_normal_server()
-                    else:
-                        print_error("Failed to start normal JVM server")
-
-                elif choice == "9":
-                    print_info("Testing Gramine-SGX server only...")
-                    if self.server_manager.start_sgx_server():
-                        _ = self.server_manager.check_server_verbose(
-                            self.config.sgx_server_port
+                        speedup_lat = self.calculate_speedup(
+                            baseline_lat, agg.get("latency_mean"), "latency"
                         )
-                        _ = self.runner.run_benchmark("sgx", "test_sgx", 1, 50)
-                        self.server_manager.stop_sgx_server()
-                    else:
-                        print_error("Failed to start Gramine-SGX server")
 
-                elif choice == "10":
-                    print(f"\nResults directory: {self.config.results_dir}")
-                    if (self.config.results_dir / "normal").exists():
-                        print("\nNormal JVM results:")
-                        for f in sorted((self.config.results_dir / "normal").glob("*")):
-                            print(f"  {f.name}")
-                    if (self.config.results_dir / "sgx").exists():
-                        print("\nGramine-SGX results:")
-                        for f in sorted((self.config.results_dir / "sgx").glob("*")):
-                            print(f"  {f.name}")
-                    if self.config.comparison_dir.exists():
-                        print("\nComparison reports:")
-                        for f in sorted(self.config.comparison_dir.glob("*")):
-                            print(f"  {f.name}")
+                        if speedup_tp is not None:
+                            eff_tp = self.calculate_efficiency(speedup_tp, nc)
+                        if speedup_lat is not None:
+                            eff_lat = self.calculate_efficiency(speedup_lat, nc)
 
-                elif choice == "11":
-                    self.reporter.generate_comparison_report()
+                    # Format values, using empty string for None
+                    row = [
+                        nc,
+                        variant_name,
+                        f"{agg.get('throughput_mean'):.2f}"
+                        if agg.get("throughput_mean") is not None
+                        else "",
+                        f"{agg.get('throughput_stdev'):.2f}"
+                        if agg.get("throughput_stdev") is not None
+                        else "",
+                        f"{agg.get('latency_mean'):.2f}"
+                        if agg.get("latency_mean") is not None
+                        else "",
+                        f"{agg.get('latency_stdev'):.2f}"
+                        if agg.get("latency_stdev") is not None
+                        else "",
+                        f"{speedup_tp:.4f}" if speedup_tp is not None else "",
+                        f"{speedup_lat:.4f}" if speedup_lat is not None else "",
+                        f"{eff_tp:.4f}" if eff_tp is not None else "",
+                        f"{eff_lat:.4f}" if eff_lat is not None else "",
+                    ]
+                    writer.writerow(row)
 
-                elif choice == "0":
-                    print_info("Exiting...")
-                    break
+        print_success(f"Strong scaling CSV: {csv_file}")
+        if not baseline:
+            print_warning(
+                "  Note: No baseline data found - speedup/efficiency not calculated"
+            )
 
+    def _generate_weak_scaling_csv(
+        self,
+        output_dir: Path,
+        variants: Dict[str, Any],
+        baseline: Optional[Dict[str, Any]],
+    ):
+        """Generate CSV for weak scaling analysis"""
+
+        csv_file = output_dir / "weak_scaling.csv"
+
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
+
+            # Header
+            header = [
+                "num_clients",
+                "total_messages",
+                "variant",
+                "throughput_mean",
+                "throughput_stdev",
+                "latency_mean",
+                "latency_stdev",
+                "speedup_throughput",
+                "speedup_latency",
+                "efficiency_throughput",
+                "efficiency_latency",
+            ]
+            writer.writerow(header)
+
+            # Get baseline data
+            baseline_lookup = {}
+            if baseline:
+                for agg in baseline.get("weak", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
+                    baseline_lookup[nc] = {
+                        "throughput": agg.get("throughput_mean"),
+                        "latency": agg.get("latency_mean"),
+                    }
+
+            # Write data for each variant
+            for variant_name in sorted(variants.keys()):
+                variant_data = variants[variant_name]
+
+                for agg in variant_data.get("weak", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
+
+                    # Calculate speedups
+                    speedup_tp = None
+                    speedup_lat = None
+                    eff_tp = None
+                    eff_lat = None
+
+                    if nc in baseline_lookup:
+                        baseline_tp = baseline_lookup[nc]["throughput"]
+                        baseline_lat = baseline_lookup[nc]["latency"]
+
+                        speedup_tp = self.calculate_speedup(
+                            baseline_tp, agg.get("throughput_mean"), "throughput"
+                        )
+                        speedup_lat = self.calculate_speedup(
+                            baseline_lat, agg.get("latency_mean"), "latency"
+                        )
+
+                        if speedup_tp is not None:
+                            eff_tp = self.calculate_efficiency(speedup_tp, nc)
+                        if speedup_lat is not None:
+                            eff_lat = self.calculate_efficiency(speedup_lat, nc)
+
+                    # Format values, using empty string for None
+                    row = [
+                        nc,
+                        agg.get("total_messages", ""),
+                        variant_name,
+                        f"{agg.get('throughput_mean'):.2f}"
+                        if agg.get("throughput_mean") is not None
+                        else "",
+                        f"{agg.get('throughput_stdev'):.2f}"
+                        if agg.get("throughput_stdev") is not None
+                        else "",
+                        f"{agg.get('latency_mean'):.2f}"
+                        if agg.get("latency_mean") is not None
+                        else "",
+                        f"{agg.get('latency_stdev'):.2f}"
+                        if agg.get("latency_stdev") is not None
+                        else "",
+                        f"{speedup_tp:.4f}" if speedup_tp is not None else "",
+                        f"{speedup_lat:.4f}" if speedup_lat is not None else "",
+                        f"{eff_tp:.4f}" if eff_tp is not None else "",
+                        f"{eff_lat:.4f}" if eff_lat is not None else "",
+                    ]
+                    writer.writerow(row)
+
+        print_success(f"Weak scaling CSV: {csv_file}")
+        if not baseline:
+            print_warning(
+                "  Note: No baseline data found - speedup/efficiency not calculated"
+            )
+
+    def _generate_startup_times_csv(
+        self, output_dir: Path, startup_times: Dict[str, float]
+    ):
+        """Generate CSV for startup times"""
+
+        csv_file = output_dir / "startup_times.csv"
+
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["variant", "startup_time_seconds"])
+
+            for variant_name in sorted(startup_times.keys()):
+                writer.writerow([variant_name, startup_times[variant_name]])
+
+        print_success(f"Startup times CSV: {csv_file}")
+
+    def _generate_text_report(
+        self,
+        output_dir: Path,
+        variants: Dict[str, Any],
+        baseline: Optional[Dict[str, Any]],
+        startup_times: Dict[str, float],
+    ):
+        """Generate human-readable text report"""
+
+        report_file = output_dir / "scaling_report.txt"
+
+        with open(report_file, "w") as f:
+            f.write("=" * 80 + "\n")
+            f.write("SCALING ANALYSIS REPORT\n")
+            f.write("TLS Server Performance Study\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 80 + "\n\n")
+
+            f.write(
+                "This report analyzes strong and weak scaling across 4 server variants:\n"
+            )
+            f.write("1. jvm-local      - JVM on local machine (baseline)\n")
+            f.write("2. jvm-gramine    - JVM inside Gramine-SGX\n")
+            f.write("3. native-dynamic - GraalVM native (glibc) inside Gramine-SGX\n")
+            f.write("4. native-static  - GraalVM native (musl) inside Gramine-SGX\n\n")
+
+            f.write("SCALING DEFINITIONS:\n")
+            f.write("- Strong scaling: Fixed total workload, varying client count\n")
+            f.write("- Weak scaling: Fixed per-client workload, varying client count\n")
+            f.write("- Speedup: Relative performance vs baseline (>1.0 is better)\n")
+            f.write("- Efficiency: Speedup / num_clients (1.0 = perfect scaling)\n\n")
+
+            f.write("=" * 80 + "\n\n")
+
+            # Startup times section
+            f.write("SERVER STARTUP TIMES\n")
+            f.write("-" * 80 + "\n\n")
+
+            baseline_startup = startup_times.get("jvm-local", 0.0)
+            f.write(
+                f"{'Variant':<20} | {'Startup Time (s)':<18} | {'Overhead vs Baseline':<20}\n"
+            )
+            f.write("-" * 80 + "\n")
+
+            for variant_name in sorted(startup_times.keys()):
+                startup = startup_times[variant_name]
+                if baseline_startup > 0 and variant_name != "jvm-local":
+                    overhead = ((startup - baseline_startup) / baseline_startup) * 100
+                    overhead_str = f"{overhead:+.1f}%"
                 else:
-                    print_error("Invalid option")
-                    time.sleep(1)
+                    overhead_str = "baseline" if variant_name == "jvm-local" else "N/A"
 
-            except KeyboardInterrupt:
-                print("\n")
-                print_info("Operation interrupted, returning to menu...")
-                time.sleep(1)
-            except Exception as e:
-                print_error(f"Error: {e}")
-                import traceback
+                f.write(
+                    f"{variant_name:<20} | {startup:>16.2f}s | {overhead_str:<20}\n"
+                )
 
-                traceback.print_exc()
+            f.write("\n" + "=" * 80 + "\n\n")
+
+            # Strong scaling section
+            f.write("STRONG SCALING RESULTS\n")
+            f.write("-" * 80 + "\n\n")
+
+            for variant_name in sorted(variants.keys()):
+                variant_data = variants[variant_name]
+                f.write(f"\n{variant_name.upper()}\n")
+                f.write("-" * 40 + "\n")
+
+                f.write(
+                    f"{'Clients':<8} | {'Throughput':<20} | {'Latency (ms)':<20} | {'Speedup':<10}\n"
+                )
+                f.write(
+                    f"{'':<8} | {'Mean ± StDev':<20} | {'Mean ± StDev':<20} | {'(vs base)':<10}\n"
+                )
+                f.write("-" * 80 + "\n")
+
+                baseline_lookup = {}
+                if baseline:
+                    for agg in baseline.get("strong", {}).get("aggregated", []):
+                        nc = agg["num_clients"]
+                        baseline_lookup[nc] = agg.get("throughput_mean")
+
+                for agg in variant_data.get("strong", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
+                    tp_mean = agg.get("throughput_mean", 0)
+                    tp_std = agg.get("throughput_stdev", 0)
+                    lat_mean = agg.get("latency_mean", 0)
+                    lat_std = agg.get("latency_stdev", 0)
+
+                    speedup_str = "N/A"
+                    if nc in baseline_lookup and baseline_lookup[nc]:
+                        speedup = tp_mean / baseline_lookup[nc]
+                        speedup_str = f"{speedup:.3f}"
+
+                    f.write(
+                        f"{nc:<8} | {tp_mean:>8.2f} ± {tp_std:<8.2f} | "
+                        f"{lat_mean:>8.2f} ± {lat_std:<8.2f} | {speedup_str:<10}\n"
+                    )
+
+                f.write("\n")
+
+            f.write("\n" + "=" * 80 + "\n\n")
+
+            # Weak scaling section
+            f.write("WEAK SCALING RESULTS\n")
+            f.write("-" * 80 + "\n\n")
+
+            for variant_name in sorted(variants.keys()):
+                variant_data = variants[variant_name]
+                f.write(f"\n{variant_name.upper()}\n")
+                f.write("-" * 40 + "\n")
+
+                f.write(
+                    f"{'Clients':<8} | {'Total Msg':<10} | {'Throughput':<20} | {'Latency (ms)':<20} | {'Speedup':<10}\n"
+                )
+                f.write(
+                    f"{'':<8} | {'':<10} | {'Mean ± StDev':<20} | {'Mean ± StDev':<20} | {'(vs base)':<10}\n"
+                )
+                f.write("-" * 90 + "\n")
+
+                baseline_lookup = {}
+                if baseline:
+                    for agg in baseline.get("weak", {}).get("aggregated", []):
+                        nc = agg["num_clients"]
+                        baseline_lookup[nc] = agg.get("throughput_mean")
+
+                for agg in variant_data.get("weak", {}).get("aggregated", []):
+                    nc = agg["num_clients"]
+                    total = agg.get("total_messages", 0)
+                    tp_mean = agg.get("throughput_mean", 0)
+                    tp_std = agg.get("throughput_stdev", 0)
+                    lat_mean = agg.get("latency_mean", 0)
+                    lat_std = agg.get("latency_stdev", 0)
+
+                    speedup_str = "N/A"
+                    if nc in baseline_lookup and baseline_lookup[nc]:
+                        speedup = tp_mean / baseline_lookup[nc]
+                        speedup_str = f"{speedup:.3f}"
+
+                    f.write(
+                        f"{nc:<8} | {total:<10} | {tp_mean:>8.2f} ± {tp_std:<8.2f} | "
+                        f"{lat_mean:>8.2f} ± {lat_std:<8.2f} | {speedup_str:<10}\n"
+                    )
+
+                f.write("\n")
+
+            f.write("\n" + "=" * 80 + "\n")
+            f.write("END OF REPORT\n")
+            f.write("=" * 80 + "\n")
+
+        print_success(f"Text report: {report_file}")
+
+        # Display summary
+        with open(report_file, "r") as f:
+            print("\n" + f.read())
+
+
+# Helper function to ensure sudo access
+def ensure_sudo_access(needs_sudo: bool) -> bool:
+    """
+    Ensure sudo access is available for SGX operations.
+    Prompts user for password if needed and validates sudo access.
+    """
+    if not needs_sudo:
+        return True
+
+    print_info("This benchmark requires sudo access for Gramine-SGX operations.")
+    print_info("Checking sudo access...")
+
+    # Check if we already have sudo access
+    result = subprocess.run(
+        ["sudo", "-n", "true"],
+        capture_output=True,
+    )
+
+    if result.returncode == 0:
+        print_success("Sudo access already available")
+        return True
+
+    # Need to authenticate
+    print_info("Please enter your sudo password:")
+    result = subprocess.run(
+        ["sudo", "-v"],
+        capture_output=False,
+    )
+
+    if result.returncode != 0:
+        print_error("Failed to obtain sudo access")
+        return False
+
+    print_success("Sudo access granted")
+
+    # Start a background process to keep sudo alive
+    # This prevents password prompts during the benchmark
+    def keep_sudo_alive():
+        while True:
+            time.sleep(60)
+            subprocess.run(["sudo", "-n", "true"], capture_output=True)
+
+    import threading
+
+    sudo_thread = threading.Thread(target=keep_sudo_alive, daemon=True)
+    sudo_thread.start()
+
+    return True
 
 
 # Main function
 def main():
     parser = argparse.ArgumentParser(
-        description="TLS Benchmark Comparison Tool - Normal JVM vs Gramine-SGX",
+        description="Scientific Scaling Benchmark Suite for TLS Servers",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Commands:
-  all             Run all comparison benchmarks
-  single          Run single client comparison test
-  warmup          Run warmup comparison test
-  low             Run low concurrency comparison test
-  medium          Run medium concurrency comparison test
-  high            Run high concurrency comparison test
-  stress          Run stress test comparison
-  interactive     Run interactive menu (default)
-  custom          Run custom comparison benchmark
-  normal-only     Test normal JVM only
-  sgx-only        Test Gramine-SGX server only
-  report          Generate comparison report from existing results
+Server Variants:
+  jvm-local       - JVM on local machine (baseline)
+  jvm-gramine     - JVM inside Gramine-SGX
+  native-dynamic  - GraalVM native (glibc) inside Gramine-SGX
+  native-static   - GraalVM native (musl) inside Gramine-SGX
+
+Scaling Studies:
+  Strong scaling: Fixed total workload (default: 1000 messages)
+                  Clients: 1, 2, 4, 8, 16
+                  Messages per client: 1000/N
+
+  Weak scaling:   Fixed per-client workload (default: 100 messages)
+                  Clients: 1, 2, 4, 8, 16
+                  Messages per client: 100 (constant)
 
 Examples:
-  %(prog)s                                    # Interactive mode
-  %(prog)s all                                # Run all comparison scenarios
-  %(prog)s stress                             # Run stress test comparison
-  %(prog)s custom --clients 15 --messages 50  # Custom comparison test
-  %(prog)s normal-only                        # Test normal JVM only
-  %(prog)s sgx-only                           # Test SGX server only
-  %(prog)s report                             # Generate report from existing results
-
-Note: SGX server will be started automatically with sudo.
-      You may be prompted for your password.
-      Press Ctrl+C to interrupt and cleanup gracefully.
+  %(prog)s --all                    # Run all variants
+  %(prog)s --variants jvm-local jvm-gramine  # Run specific variants
+  %(prog)s --all --runs 5           # Run 5 iterations per configuration
+  %(prog)s --all --strong-total 2000 --weak-per-client 200
         """,
     )
 
-    _ = parser.add_argument(
-        "command",
-        nargs="?",
-        default="interactive",
-        choices=[
-            "all",
-            "single",
-            "warmup",
-            "low",
-            "medium",
-            "high",
-            "stress",
-            "interactive",
-            "custom",
-            "normal-only",
-            "sgx-only",
-            "report",
-        ],
-        help="Command to execute",
+    parser.add_argument(
+        "--all", action="store_true", help="Run benchmarks for all 4 variants"
     )
-    _ = parser.add_argument("--host", default="localhost", help="Server host")
-    _ = parser.add_argument(
-        "--normal-port", type=int, default=9443, help="Normal JVM server port"
+
+    parser.add_argument(
+        "--variants",
+        nargs="+",
+        choices=["jvm-local", "jvm-gramine", "native-dynamic", "native-static"],
+        help="Specific variants to benchmark",
     )
-    _ = parser.add_argument(
-        "--sgx-port", type=int, default=9444, help="Gramine-SGX server port"
-    )
-    _ = parser.add_argument(
-        "--clients",
+
+    parser.add_argument(
+        "--runs",
         type=int,
-        default=10,
-        help="Number of concurrent clients (for custom)",
+        default=3,
+        help="Number of runs per configuration (default: 3)",
     )
-    _ = parser.add_argument(
-        "--messages",
+
+    parser.add_argument(
+        "--strong-total",
+        type=int,
+        default=1000,
+        help="Total messages for strong scaling (default: 1000)",
+    )
+
+    parser.add_argument(
+        "--weak-per-client",
         type=int,
         default=100,
-        help="Number of messages per client (for custom)",
+        help="Messages per client for weak scaling (default: 100)",
     )
 
     args = parser.parse_args()
 
+    # Determine which variants to run
+    variants_to_run = []
+    if args.all:
+        variants_to_run = [
+            "jvm-local",
+            "jvm-gramine",
+            "native-dynamic",
+            "native-static",
+        ]
+    elif args.variants:
+        variants_to_run = args.variants
+    else:
+        print_error("Must specify --all or --variants")
+        parser.print_help()
+        sys.exit(1)
+
     # Create configuration
     config = Config()
-    config.server_host = str(args.host)  # pyright: ignore[reportAny]
-    config.normal_server_port = int(args.normal_port)  # pyright: ignore[reportAny]
-    config.sgx_server_port = int(args.sgx_port)  # pyright: ignore[reportAny]
-
-    # Create components
     server_manager = ServerManager(config)
-    runner = BenchmarkRunner(config, server_manager)
-    reporter = ReportGenerator(config)
-    menu = InteractiveMenu(config, server_manager, runner, reporter)
+    benchmark = ScalingBenchmark(config, server_manager)
+    analyzer = ScalingAnalyzer(config)
 
     # Setup cleanup handler
-    def cleanup(signum: int | None = None, frame: Any | None = None) -> None:  # pyright: ignore[reportUnusedParameter, reportExplicitAny]
+    def cleanup(signum: Optional[int] = None, frame: Any = None):
         print("\n")
         print_info("Received interrupt signal, cleaning up...")
         try:
-            server_manager.stop_normal_server()
-            server_manager.stop_sgx_server()
+            server_manager.stop_server()
         except Exception as e:
             print_error(f"Error during cleanup: {e}")
         finally:
             print_info("Cleanup complete")
             sys.exit(0)
 
-    _ = signal.signal(signal.SIGINT, cleanup)
-    _ = signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
 
     try:
-        # Check dependencies
-        if args.command != "report":  # pyright: ignore[reportAny]
-            if not (config.classes_dir / "client" / "BenchClient.class").exists():
-                print_error("Classes not found. Please run 'make all' first.")
-                sys.exit(1)
+        # Check if we need sudo (any Gramine variant)
+        needs_sudo = any(
+            v in variants_to_run
+            for v in ["jvm-gramine", "native-dynamic", "native-static"]
+        )
 
-        # Create results directories
-        config.results_dir.mkdir(parents=True, exist_ok=True)
-        (config.results_dir / "normal").mkdir(parents=True, exist_ok=True)
-        (config.results_dir / "sgx").mkdir(parents=True, exist_ok=True)
-        config.comparison_dir.mkdir(parents=True, exist_ok=True)
+        if needs_sudo and not ensure_sudo_access(True):
+            print_error("Sudo access is required for Gramine-SGX benchmarks")
+            sys.exit(1)
 
-        # Execute command
-        if args.command == "all":
-            _ = runner.run_all_benchmarks()
+        print_header("SCIENTIFIC SCALING BENCHMARK SUITE")
+        print_info(f"Variants to test: {', '.join(variants_to_run)}")
+        print_info(f"Client counts: {config.client_counts}")
+        print_info(f"Runs per configuration: {args.runs}")
+        print_info(f"Strong scaling total messages: {args.strong_total}")
+        print_info(f"Weak scaling messages per client: {args.weak_per_client}")
+        print_info(f"Results will be saved to: {config.results_dir}/{config.timestamp}")
 
-        elif args.command == "single":
-            _ = runner.run_comparison_benchmark("single_client", 1, 100)
+        if "jvm-local" not in variants_to_run:
+            print_warning("WARNING: 'jvm-local' is not in the variant list.")
+            print_warning(
+                "Speedup and efficiency calculations require jvm-local as baseline."
+            )
 
-        elif args.command == "warmup":
-            _ = runner.run_comparison_benchmark("warmup", 1, 10)
+        # Run benchmarks for each variant
+        all_results = []
 
-        elif args.command == "low":
-            _ = runner.run_comparison_benchmark("low_concurrency", 5, 100)
+        for i, variant in enumerate(variants_to_run, 1):
+            print_header(f"VARIANT {i}/{len(variants_to_run)}: {variant.upper()}")
+            try:
+                result = benchmark.run_variant_benchmarks(
+                    variant,
+                    strong_total=args.strong_total,
+                    weak_per_client=args.weak_per_client,
+                    num_runs=args.runs,
+                )
+                all_results.append(result)
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                print_error(f"Error benchmarking {variant}: {e}")
+                import traceback
 
-        elif args.command == "medium":
-            _ = runner.run_comparison_benchmark("medium_concurrency", 10, 100)
+                traceback.print_exc()
 
-        elif args.command == "high":
-            _ = runner.run_comparison_benchmark("high_concurrency", 20, 100)
-
-        elif args.command == "stress":
-            _ = runner.run_comparison_benchmark("stress_test", 50, 200)
-
-        elif args.command == "custom":
-            _ = runner.run_comparison_benchmark("custom", args.clients, args.messages)
-
-        elif args.command == "normal-only":
-            if server_manager.start_normal_server():
-                _ = runner.run_benchmark("normal", "test_normal", 10, 100)
-                server_manager.stop_normal_server()
-            else:
-                print_error("Failed to start normal JVM server")
-                sys.exit(1)
-
-        elif args.command == "sgx-only":
-            if server_manager.start_sgx_server():
-                _ = runner.run_benchmark("sgx", "test_sgx", 10, 100)
-                server_manager.stop_sgx_server()
-            else:
-                print_error("Failed to start Gramine-SGX server")
-                sys.exit(1)
-
-        elif args.command == "report":
-            reporter.generate_comparison_report()
-
-        elif args.command == "interactive":
-            menu.run()
-
-        cleanup()
+        # Generate analysis report
+        if all_results:
+            print_header("GENERATING ANALYSIS REPORTS")
+            analyzer.generate_scaling_report(all_results)
+            print_success("\n✓ Benchmark suite completed successfully!")
+            print_info(f"Results location: {config.results_dir}/{config.timestamp}")
+        else:
+            print_error("No results collected")
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n")

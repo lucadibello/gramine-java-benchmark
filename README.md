@@ -1,49 +1,77 @@
 # TLS Benchmark Server for Gramine-SGX
 
-A multi-threaded Java TLS server designed to benchmark the performance overhead of running confidential computing workloads in Intel SGX via Gramine.
+A comprehensive study measuring the performance overhead of deploying Java applications inside SGX enclaves using Gramine. This benchmarking suite compares four execution environments: native JVM (baseline), JVM in Gramine-SGX, and GraalVM native images (dynamic and static) in Gramine-SGX.
 
 ## Overview
 
-This project measures the real-world performance impact of running a TLS socket server inside a Trusted Execution Environment (TEE). The server performs typical stream processing operations including CRC32 checksums, data transformation, pattern matching, and statistical analysis—all within the hardware-encrypted memory space of an SGX enclave.
+This project performs a scaling analysis of a multi-threaded TLS server, measuring performance across different confidential computing configurations. The server performs typical stream processing operations including CRC32 checksums, data transformation, pattern matching, and statistical analysis—all within hardware-encrypted SGX enclave memory.
 
-## Performance Results
+## Scaling Analysis Results
 
-Comprehensive benchmarks comparing native JVM execution against Gramine-SGX show workload-dependent overhead ranging from 3% to 85%.
+Comprehensive benchmarks analyzing **strong scaling** (fixed workload) and **weak scaling** (fixed per-client workload) across four server variants reveal significant performance characteristics and SGX overhead patterns.
 
-![Throughput Comparison](docs/plots/throughput_comparison.png)
-*Figure 1: Throughput comparison between normal JVM and Gramine-SGX across different scenarios*
+### Test Configurations
 
-![Overhead by Scenario](docs/plots/overhead_by_scenario.png)
-*Figure 2: Performance overhead percentage by workload scenario*
+| Variant | Description | Startup Time | Overhead |
+|---------|-------------|--------------|----------|
+| **jvm-local** | JVM on native hardware (baseline) | 3.22s | — |
+| **jvm-gramine** | JVM inside Gramine-SGX | 65.22s | +1925% |
+| **native-dynamic** | GraalVM native (glibc) in SGX | 135.61s | +4109% |
+| **native-static** | GraalVM native (musl) in SGX | 132.44s | +4011% |
 
-### Key Findings
+![Startup Times](plots/startup_times.png)
+*Figure 1: Server startup time comparison across variants*
 
-| Scenario | Normal JVM (msg/s) | SGX (msg/s) | Overhead |
-|----------|-------------------|-------------|----------|
-| Single client, 50 messages | 381.7 | 370.4 | 3.0% |
-| Single client, 200 messages | 1526.7 | 1342.3 | 12.1% |
-| Single client, 500 messages | 4098.4 | 615.8 | 85.0% |
-| 5 concurrent clients | 320.5 | 269.0 | 16.1% |
-| 10 concurrent clients | 623.1 | 288.0 | 53.8% |
-| 20 concurrent clients | 729.7 | 168.3 | 76.9% |
-| 50 concurrent clients | 601.7 | 176.9 | 70.6% |
-| 100 concurrent clients | 763.1 | 402.4 | 47.3% |
+### Strong Scaling Results (Fixed Total Workload: 1000 messages)
 
-### Analysis
+Strong scaling measures how performance changes when distributing a fixed workload across increasing numbers of clients.
 
-**Single-client workloads** show minimal overhead (3-12%) for typical message volumes, but degrade significantly at 500 messages per batch (85% overhead), likely due to enclave memory pressure and EPC paging.
+![Strong Scaling Throughput](plots/strong_scaling_throughput.png)
+*Figure 2: Strong scaling throughput comparison*
 
-**Concurrent workloads** experience substantial overhead (16-77%) that scales with client count up to 20 clients, then stabilizes. Latency increases by 3-6x under concurrent load.
+![Strong Scaling Speedup](plots/strong_scaling_speedup.png)
+*Figure 3: Strong scaling speedup and parallel efficiency*
 
-![Concurrency Scaling](docs/plots/concurrency_scaling.png)
-*Figure 3: Performance scaling analysis with increasing concurrency levels*
+**Key Findings:**
 
-![Latency Comparison](docs/plots/latency_comparison.png)
-*Figure 4: Average latency comparison under different load conditions*
+| Clients | JVM Local | JVM Gramine | Native Dynamic | Native Static |
+|---------|-----------|-------------|----------------|---------------|
+| 1 | 7,815 msg/s | 855 msg/s (11%) | 5,731 msg/s (73%) | 5,000 msg/s (64%) |
+| 2 | 177 msg/s | 149 msg/s (85%) | 161 msg/s (91%) | 177 msg/s (100%) |
+| 4 | 326 msg/s | 172 msg/s (53%) | 322 msg/s (99%) | 323 msg/s (99%) |
+| 8 | 544 msg/s | 194 msg/s (36%) | 541 msg/s (99%) | 550 msg/s (101%) |
+| 16 | 507 msg/s | 155 msg/s (31%) | 498 msg/s (98%) | 494 msg/s (97%) |
 
-**Recommendation**: Gramine-SGX is well-suited for confidential computing applications with light to moderate workloads (< 10 concurrent clients, < 200 messages per batch) where data privacy requirements justify the performance trade-off.
+*Percentages show speedup relative to JVM baseline*
 
-Detailed analysis and visualizations are available in [BENCHMARKS.md](BENCHMARKS.md).
+### Weak Scaling Results (Fixed Per-Client Workload: 100 messages)
+
+Weak scaling measures how performance changes when workload scales proportionally with client count.
+
+![Weak Scaling Throughput](plots/weak_scaling_throughput.png)
+*Figure 4: Weak scaling throughput comparison*
+
+![Weak Scaling Speedup](plots/weak_scaling_speedup.png)
+*Figure 5: Weak scaling speedup and parallel efficiency*
+
+**Key Findings:**
+
+| Clients | JVM Local | JVM Gramine | Native Dynamic | Native Static |
+|---------|-----------|-------------|----------------|---------------|
+| 1 | 781 msg/s | 457 msg/s (59%) | 787 msg/s (101%) | 779 msg/s (100%) |
+| 2 | 135 msg/s | 105 msg/s (77%) | 137 msg/s (102%) | 137 msg/s (102%) |
+| 4 | 266 msg/s | 140 msg/s (53%) | 260 msg/s (98%) | 260 mg/s (98%) |
+| 8 | 516 msg/s | 171 msg/s (33%) | 507 msg/s (98%) | 504 msg/s (98%) |
+| 16 | 587 msg/s | 205 msg/s (35%) | 580 msg/s (99%) | 573 msg/s (97%) |
+
+*Percentages show speedup relative to JVM baseline*
+
+### Analysis & Recommendations
+
+![SGX Overhead Comparison](plots/sgx_overhead_comparison.png)
+*Figure 6: Average SGX performance overhead by variant*
+
+Detailed results available in `scaling-results/*/scaling_report.txt`.
 
 ## Architecture
 
@@ -60,11 +88,37 @@ Detailed analysis and visualizations are available in [BENCHMARKS.md](BENCHMARKS
 ## Quick Start
 
 ### Prerequisites
+
+**Option 1: Using the included devcontainer (Recommended)**
+
+This project includes a preconfigured devcontainer with all dependencies installed. Simply open the project in VS Code or any IDE that supports devcontainers, and you'll have everything ready to go:
+- Java Development Kit
+- Gramine with SGX support
+- GraalVM for native image builds
+- All build tools and dependencies
+
+Alternatively, use the included [go-task](https://taskfile.dev/) commands (requires Node.js and `devcontainer-cli`):
+
+```bash
+# Build, start, and attach to devcontainer
+task devcontainer
+
+# Recreate devcontainer from scratch
+task devcontainer-recreate
+
+# Stop and remove devcontainer
+task devcontainer-down
+```
+
+**Option 2: Manual setup**
 - Java 8 or later
 - Gramine with SGX support
 - Intel CPU with SGX enabled
+- (Optional) GraalVM for native image builds
 
-### Build
+### Build Options
+
+#### Option 1: JVM Build (Default)
 ```bash
 # Generate self-signed certificates
 ./tools/generate-certs.sh
@@ -73,16 +127,42 @@ Detailed analysis and visualizations are available in [BENCHMARKS.md](BENCHMARKS
 make clean all SGX=1
 ```
 
+#### Option 2: Native Images with GraalVM
+
+For faster startup and lower memory footprint, use GraalVM native images:
+
+**Dynamic build (recommended - better SGX compatibility):**
+```bash
+make clean
+make APP_NAME=native-bench-dynamic STATIC_NATIVE=0 SGX=1 all
+```
+
+**Static build (self-contained):**
+```bash
+make clean
+make APP_NAME=native-bench-static STATIC_NATIVE=1 SGX=1 all
+```
+
 ### Run Server
 
-Normal JVM:
+**Normal JVM:**
 ```bash
 java -cp target/classes server.BenchServer --port 8443
 ```
 
-Gramine-SGX:
+**Gramine-SGX (JVM):**
 ```bash
 sudo gramine-sgx bench -cp /app/classes server.BenchServer --port 8443
+```
+
+**Gramine-SGX (Native Image - Dynamic):**
+```bash
+sudo gramine-sgx native-bench-dynamic
+```
+
+**Gramine-SGX (Native Image - Static):**
+```bash
+sudo gramine-sgx native-bench-static
 ```
 
 ### Run Client
@@ -102,38 +182,36 @@ java -cp target/classes client.BenchClient \
 
 ## Automated Benchmarking
 
-The benchmark tool automatically runs comparison tests between normal JVM and Gramine-SGX:
+The benchmark suite performs scientific scaling analysis across all four server variants:
 
 ```bash
-# Run all benchmark scenarios
-./tools/run-benchmarks.py all
+# Run complete scaling analysis (all 4 variants)
+python3 tools/run-benchmarks.py --all
 
-# Run specific test
-./tools/run-benchmarks.py single
-./tools/run-benchmarks.py stress
+# Run specific variants
+python3 tools/run-benchmarks.py --variants jvm-local jvm-gramine
 
-# Custom parameters
-./tools/run-benchmarks.py custom --clients 15 --messages 50
+# Customize test parameters
+python3 tools/run-benchmarks.py --all \
+  --runs 5 \
+  --strong-total 2000 \
+  --weak-per-client 200
 
-# Generate report from existing results
-./tools/run-benchmarks.py report
+# See all options
+python3 tools/run-benchmarks.py --help
 ```
 
-Results are saved to `benchmark-results/` with detailed reports and CSV data.
+**Benchmark Types:**
+- **Strong Scaling**: Fixed total workload (default: 1000 messages) distributed across 1, 2, 4, 8, 16 clients
+- **Weak Scaling**: Fixed per-client workload (default: 100 messages) across 1, 2, 4, 8, 16 clients
+- **Multiple runs**: Each configuration runs 3 times (configurable) for statistical significance
 
-### Generating Plots
-
-Visualize benchmark results with the plot generation tool:
-
-```bash
-# Generate plots from latest benchmark data
-./tools/update-plots.sh
-
-# Generate plots from specific CSV file
-python3 tools/generate-plots.py benchmark-results/comparison/comparison_data_*.csv --output-dir docs/plots
-```
-
-This generates professional PNG plots including throughput comparison, overhead analysis, latency impact, and concurrency scaling visualizations.
+Results are saved to `scaling-results/<timestamp>/` with:
+- `strong_scaling.csv` - Strong scaling metrics with speedup/efficiency
+- `weak_scaling.csv` - Weak scaling metrics with speedup/efficiency
+- `startup_times.csv` - Server startup time measurements
+- `scaling_report.txt` - Comprehensive human-readable report
+- `raw_results.json` - Complete raw data for custom analysis
 
 ## Protocol
 
@@ -141,30 +219,6 @@ Clients send newline-terminated text messages. The server responds with:
 ```
 ACK|checksum=<crc32>|size=<bytes>|processing_time_ms=<ms>|status=<status>
 ```
-
-## Security Considerations
-
-**Certificates**: The included certificate generation script creates self-signed certificates for benchmarking only. Production deployments should use properly issued certificates or leverage SGX remote attestation for trust establishment.
-
-**Enclave Limitations**: SGX enclaves have limited memory (typically 128-256 MB EPC). Applications exceeding this size will experience severe performance degradation due to paging. Profile your workload to ensure it fits within available enclave memory.
-
-**System Calls**: Each system call requires exiting and re-entering the enclave (8,000-15,000 CPU cycles). Minimize syscalls through batching and async I/O where possible.
-
-## Understanding the Overhead
-
-The performance cost of SGX comes from:
-- **Memory encryption**: All enclave memory is encrypted using hardware AES-128
-- **Enclave transitions**: System calls require expensive EEXIT/EENTER instructions
-- **Limited EPC**: Working sets exceeding enclave page cache trigger paging
-- **TLB pressure**: Separate TLB entries for enclave pages increase misses
-- **Synchronization overhead**: Enclave-specific lock management
-
-These mechanisms provide hardware-enforced confidentiality and isolation, ensuring even privileged attackers cannot inspect enclave memory.
-
-## License
-
-This is a benchmarking tool for research and evaluation purposes. Use as needed.
-
 ## References
 
 - [Gramine Documentation](https://gramine.readthedocs.io/)

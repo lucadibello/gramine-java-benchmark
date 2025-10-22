@@ -12,11 +12,6 @@
     ],
     "features": {
         "ghcr.io/devcontainers/features/sshd:1": {},
-        "ghcr.io/devcontainers/features/java:1": {
-            "version": "21-tem",
-            "installGradle": "true",
-            "installMaven": "true"
-        },
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": "true",
             "configureZshAsDefaultShell": "true",
@@ -31,9 +26,13 @@
         "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {},
         "ghcr.io/jungaretti/features/make:1": {},
         "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
-            "packages": "gcc"
+            "packages": "gcc, build-essential, zlib1g-dev, musl-tools, musl-dev"
         },
-        "ghcr.io/audacioustux/devcontainers/graalvm:1": {}
+        "ghcr.io/audacioustux/devcontainers/graalvm:1": {
+            "java": 21
+        },
+        "ghcr.io/devcontainers-extra/features/gradle-sdkman:2": {},
+        "ghcr.io/devcontainers-extra/features/maven-sdkman:2": {}
     },
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
@@ -43,5 +42,6 @@
     },
     "containerEnv": {
         "SSH_AUTH_SOCK": "/ssh-agent"
-    }
+    },
+    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'"
 }
