@@ -19,7 +19,7 @@ Comprehensive benchmarks analyzing **strong scaling** (fixed workload) and **wea
 | **native-dynamic** | GraalVM native (glibc) in SGX | 135.61s | +4109% |
 | **native-static** | GraalVM native (musl) in SGX | 132.44s | +4011% |
 
-![Startup Times](docs/plots/startup_times.png)
+![Startup Times](plots/startup_times.png)
 *Figure 1: Server startup time comparison across variants*
 
 ### Strong Scaling Results (Fixed Total Workload: 1000 messages)
