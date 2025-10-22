@@ -26,10 +26,10 @@ Comprehensive benchmarks analyzing **strong scaling** (fixed workload) and **wea
 
 Strong scaling measures how performance changes when distributing a fixed workload across increasing numbers of clients.
 
-![Strong Scaling Throughput](docs/plots/strong_scaling_throughput.png)
+![Strong Scaling Throughput](plots/strong_scaling_throughput.png)
 *Figure 2: Strong scaling throughput comparison*
 
-![Strong Scaling Speedup](docs/plots/strong_scaling_speedup.png)
+![Strong Scaling Speedup](plots/strong_scaling_speedup.png)
 *Figure 3: Strong scaling speedup and parallel efficiency*
 
 **Key Findings:**
@@ -48,10 +48,10 @@ Strong scaling measures how performance changes when distributing a fixed worklo
 
 Weak scaling measures how performance changes when workload scales proportionally with client count.
 
-![Weak Scaling Throughput](docs/plots/weak_scaling_throughput.png)
+![Weak Scaling Throughput](plots/weak_scaling_throughput.png)
 *Figure 4: Weak scaling throughput comparison*
 
-![Weak Scaling Speedup](docs/plots/weak_scaling_speedup.png)
+![Weak Scaling Speedup](plots/weak_scaling_speedup.png)
 *Figure 5: Weak scaling speedup and parallel efficiency*
 
 **Key Findings:**
@@ -68,7 +68,7 @@ Weak scaling measures how performance changes when workload scales proportionall
 
 ### Analysis & Recommendations
 
-![SGX Overhead Comparison](docs/plots/sgx_overhead_comparison.png)
+![SGX Overhead Comparison](plots/sgx_overhead_comparison.png)
 *Figure 6: Average SGX performance overhead by variant*
 
 Detailed results available in `scaling-results/*/scaling_report.txt`.
