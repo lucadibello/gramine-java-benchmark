@@ -26,7 +26,7 @@
         "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {},
         "ghcr.io/jungaretti/features/make:1": {},
         "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
-            "packages": "gcc"
+            "packages": "gcc, build-essential, zlib1g-dev, musl-tools, musl-dev"
         },
         "ghcr.io/audacioustux/devcontainers/graalvm:1": {
             "java": 21
@@ -42,5 +42,6 @@
     },
     "containerEnv": {
         "SSH_AUTH_SOCK": "/ssh-agent"
-    }
+    },
+    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'"
 }
