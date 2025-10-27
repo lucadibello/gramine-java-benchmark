@@ -1,6 +1,9 @@
 {
     "name": "Gramine Java Benchmark",
-    "image": "gramineproject/gramine:stable-noble",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
     "remoteUser": "dev",
     "runArgs": [
         "--name=gramine-java-sgx",
@@ -41,7 +44,9 @@
         "memory": "4gb"
     },
     "containerEnv": {
-        "SSH_AUTH_SOCK": "/ssh-agent"
+        "SSH_AUTH_SOCK": "/ssh-agent",
+        "NVIM_LISTEN_ADDRESS": "127.0.0.1:6666"
     },
-    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'"
+    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'",
+    "postStartCommand": "bash -lc \"if ! pgrep -u $(id -u) -f 'nvim --headless --listen' > /dev/null; then mkdir -p ~/.cache && nohup nvim --headless --listen ${NVIM_LISTEN_ADDRESS:-127.0.0.1:6666} > ~/.cache/nvim-server.log 2>&1 & fi\""
 }
