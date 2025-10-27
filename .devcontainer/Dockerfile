@@ -10,10 +10,15 @@ ARG REMOTE_UID=1000
 ARG REMOTE_GID=${REMOTE_UID}
 ARG REMOTE_HOME=/home/${REMOTE_USER}
 
+ARG GIT_EMAIL=lucadibello@proton.me
+ARG GIT_NAME=Luca Di Bello
+
 ARG GRADLE_VERSION=8.6
 ARG MAVEN_VERSION=3.9.6
 ARG NEOVIM_ARCHIVE_URL=https://github.com/neovim/neovim-releases/releases/download/v0.11.4/nvim-linux-x86_64.tar.gz
 ARG GRAALVM_ARCHIVE_URL=https://download.oracle.com/graalvm/21/latest/graalvm-jdk-21_linux-x64_bin.tar.gz
+ARG NODE_VERSION=22.20.0
+ARG NODE_ARCH=x64
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=en_US.UTF-8 \
@@ -159,6 +164,20 @@ RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygi
   tar xf lazygit.tar.gz lazygit && \
   install lazygit -D -t /usr/local/bin/ && \
   echo "LazyGit installed successfully."
+
+# install Node.JS LST (useful for tools!)
+RUN set -eux; \
+    echo "Installing Node.js v${NODE_VERSION} for ${NODE_ARCH}..." && \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    tar -xf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    mv "node-v${NODE_VERSION}-linux-${NODE_ARCH}" /usr/local/node-v${NODE_VERSION} && \
+    ln -sf /usr/local/node-v${NODE_VERSION}/bin/node /usr/local/bin/node && \
+    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npm /usr/local/bin/npm && \
+    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npx /usr/local/bin/npx && \
+    echo "Verifying Node.js installation..." && \
+    node -v && npm -v && \
+    rm -rf /tmp/node-v${NODE_VERSION}-linux-${NODE_ARCH}* && \
+    echo "Node.js installed successfully."
 
 # Provide entrypoint that keeps the headless Neovim server alive
 COPY .devcontainer/devcontainer-entrypoint.sh /usr/local/bin/devcontainer-entrypoint
