@@ -22,9 +22,10 @@
         "cpus": 2,
         "memory": "4gb"
     },
+    "workspaceFolder":"/workspaces/gramine-java-sgx",
     "containerEnv": {
         "SSH_AUTH_SOCK": "/ssh-agent",
-        "NVIM_LISTEN_ADDRESS": "127.0.0.1:6666"
+        "NVIM_LISTEN_ADDRESS": "0.0.0.0:6666"
     },
-    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'",
+    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'"
 }

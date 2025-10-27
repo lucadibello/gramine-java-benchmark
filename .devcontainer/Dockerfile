@@ -153,6 +153,13 @@ RUN curl -fsSL "${NEOVIM_ARCHIVE_URL}" -o /tmp/nvim.tar.gz \
     && ln -sf /opt/nvim/bin/nvim /usr/local/bin/nvim
 # RUN python3 -m pip install --no-cache-dir pynvim
 
+# lazygit (binary release)
+RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | \grep -Po '"tag_name": *"v\K[^"]*') && \
+  curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
+  tar xf lazygit.tar.gz lazygit && \
+  install lazygit -D -t /usr/local/bin/ && \
+  echo "LazyGit installed successfully."
+
 # Provide entrypoint that keeps the headless Neovim server alive
 COPY .devcontainer/devcontainer-entrypoint.sh /usr/local/bin/devcontainer-entrypoint
 RUN chmod +x /usr/local/bin/devcontainer-entrypoint
@@ -175,6 +182,8 @@ RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GR
     && chown "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.cache
 
 EXPOSE 2222 6666
+
+WORKDIR /workspaces/gramine-java-benchmark
 
 ENTRYPOINT ["/usr/local/bin/devcontainer-entrypoint"]
 CMD ["/usr/sbin/sshd", "-D", "-e"]
