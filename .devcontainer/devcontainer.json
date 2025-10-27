@@ -29,13 +29,16 @@
         "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {},
         "ghcr.io/jungaretti/features/make:1": {},
         "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
-            "packages": "gcc, build-essential, zlib1g-dev, musl-tools, musl-dev"
+            "packages": "gcc,build-essential,zlib1g-dev,musl-tools,musl-dev"
         },
         "ghcr.io/audacioustux/devcontainers/graalvm:1": {
             "java": 21
         },
         "ghcr.io/devcontainers-extra/features/gradle-sdkman:2": {},
-        "ghcr.io/devcontainers-extra/features/maven-sdkman:2": {}
+        "ghcr.io/devcontainers-extra/features/maven-sdkman:2": {},
+        "ghcr.io/duduribeiro/devcontainer-features/neovim:1": {
+            "version": "stable"
+        }
     },
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
