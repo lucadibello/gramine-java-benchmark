@@ -24,7 +24,7 @@ if [ "$DEVUSER" = "root" ]; then
   /usr/local/bin/nvim-server.sh &
   NVIM_SERVER_PID=$!
 else
-  sudo --preserve-env="$NVIM_ENV_PRESERVE" -u "$DEVUSER" /usr/local/bin/nvim-server.sh &
+  sudo --preserve-env="$NVIM_ENV_PRESERVE" -u "dev" /usr/local/bin/nvim-server.sh &
   NVIM_SERVER_PID=$!
 fi
 echo "[entrypoint] nvim server started (pid $NVIM_SERVER_PID)"
