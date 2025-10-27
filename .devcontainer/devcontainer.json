@@ -5,13 +5,16 @@
         "context": ".."
     },
     "remoteUser": "dev",
+    "overrideCommand": false,
     "runArgs": [
         "--name=gramine-java-sgx",
         "--device=/dev/sgx_enclave:/dev/sgx_enclave",
         "--device=/dev/sgx_provision:/dev/sgx_provision",
         "--device=/dev/sgx_vepc:/dev/sgx_vepc",
         "--publish",
-        "127.0.0.1:2222:2222"
+        "127.0.0.1:2222:2222",
+        "--publish",
+        "127.0.0.1:6666:6666"
     ],
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
@@ -24,5 +27,4 @@
         "NVIM_LISTEN_ADDRESS": "127.0.0.1:6666"
     },
     "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'",
-    "postStartCommand": "bash -lc \"if ! pgrep -u $(id -u) -f 'nvim --headless --listen' > /dev/null; then mkdir -p ~/.cache && nohup nvim --headless --listen ${NVIM_LISTEN_ADDRESS:-127.0.0.1:6666} > ~/.cache/nvim-server.log 2>&1 & fi\""
 }

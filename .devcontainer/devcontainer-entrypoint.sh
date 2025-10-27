@@ -40,19 +40,5 @@ else
   echo "[entrypoint] nvim server already running; skipping"
 fi
 
-# Launch OpenSSH daemon in the foreground to keep container alive
-echo "[entrypoint] starting sshd on port 2222"
-/usr/sbin/sshd -D &
-SSHD_PID=$!
-
-cleanup() {
-  if [ -n "${NVIM_SERVER_PID:-}" ] && ps -p "${NVIM_SERVER_PID}" >/dev/null 2>&1; then
-    kill "${NVIM_SERVER_PID}" || true
-  fi
-  if [ -n "${SSHD_PID:-}" ] && ps -p "${SSHD_PID}" >/dev/null 2>&1; then
-    kill "${SSHD_PID}" || true
-  fi
-}
-trap cleanup EXIT
-
-wait "${SSHD_PID}"
+# Exec original CMD (sshd -D -e by default)
+exec "$@"
