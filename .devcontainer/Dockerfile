@@ -80,15 +80,22 @@ RUN sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen en_US.UTF-8
 
 # Create non-root user with passwordless sudo
-RUN if ! getent group "${REMOTE_GROUP}" >/dev/null; then \
+RUN GROUP_NAME="${REMOTE_GROUP}" \
+    && EXISTING_GID_GROUP="$(getent group "${REMOTE_GID}" | cut -d: -f1 || true)" \
+    && if [ -n "${EXISTING_GID_GROUP}" ]; then \
+        GROUP_NAME="${EXISTING_GID_GROUP}"; \
+    elif ! getent group "${REMOTE_GROUP}" >/dev/null; then \
         groupadd --gid "${REMOTE_GID}" "${REMOTE_GROUP}"; \
     fi \
     && if ! id -u "${REMOTE_USER}" >/dev/null 2>&1; then \
-        useradd --create-home --shell /usr/bin/zsh --uid "${REMOTE_UID}" --gid "${REMOTE_GROUP}" "${REMOTE_USER}"; \
+        useradd --create-home --shell /usr/bin/zsh --uid "${REMOTE_UID}" --gid "${GROUP_NAME}" "${REMOTE_USER}"; \
+    else \
+        usermod --gid "${GROUP_NAME}" "${REMOTE_USER}"; \
     fi \
     && usermod -aG sudo "${REMOTE_USER}" \
     && echo "${REMOTE_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-"${REMOTE_USER}" \
-    && chmod 0440 /etc/sudoers.d/90-"${REMOTE_USER}"
+    && chmod 0440 /etc/sudoers.d/90-"${REMOTE_USER}" \
+    && echo "${GROUP_NAME}" > /etc/devcontainer-group
 
 # SSH server configuration
 RUN mkdir -p /var/run/sshd \
@@ -101,8 +108,9 @@ RUN mkdir -p /var/run/sshd \
     && grep -qxF 'X11Forwarding yes' /etc/ssh/sshd_config || echo 'X11Forwarding yes' >> /etc/ssh/sshd_config
 
 # Ensure user directories exist with correct permissions
-RUN mkdir -p "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
-    && chown -R "${REMOTE_USER}:${REMOTE_GROUP}" "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
+RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
+    && mkdir -p "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
+    && chown -R "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
     && chmod 700 "${REMOTE_HOME}"/.ssh
 
 # Install GraalVM and native-image tooling
@@ -144,19 +152,21 @@ COPY .devcontainer/devcontainer-entrypoint.sh /usr/local/bin/devcontainer-entryp
 RUN chmod +x /usr/local/bin/devcontainer-entrypoint
 
 # Install Neovim configuration for the remote user
-RUN git clone https://github.com/lucadibello/neovim.git /tmp/nvim-config \
+RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
+    && git clone https://github.com/lucadibello/neovim.git /tmp/nvim-config \
     && mkdir -p "${REMOTE_HOME}"/.config \
     && rm -rf "${REMOTE_HOME}"/.config/nvim \
     && cp -a /tmp/nvim-config "${REMOTE_HOME}"/.config/nvim \
-    && chown -R "${REMOTE_USER}:${REMOTE_GROUP}" "${REMOTE_HOME}"/.config/nvim \
+    && chown -R "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.config/nvim \
     && rm -rf /tmp/nvim-config
 
 # Install Oh My Zsh for the remote user (non-interactive)
 RUN su - "${REMOTE_USER}" -c 'export RUNZSH=no CHSH=no; sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"'
 
 # Ensure cache directory exists for headless Neovim logs
-RUN mkdir -p "${REMOTE_HOME}"/.cache \
-    && chown "${REMOTE_USER}:${REMOTE_GROUP}" "${REMOTE_HOME}"/.cache
+RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
+    && mkdir -p "${REMOTE_HOME}"/.cache \
+    && chown "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.cache
 
 EXPOSE 2222 6666
 
