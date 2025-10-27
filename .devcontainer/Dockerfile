@@ -23,7 +23,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Provide entrypoint that keeps the headless Neovim server alive
-COPY .devcontainer/entrypoint.sh /usr/local/bin/devcontainer-entrypoint
+COPY .devcontainer/devcontainer-entrypoint.sh /usr/local/bin/devcontainer-entrypoint
 RUN chmod +x /usr/local/bin/devcontainer-entrypoint
 
 # Install Neovim configuration for the remote user
