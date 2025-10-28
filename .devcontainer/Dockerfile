@@ -11,7 +11,7 @@ ARG REMOTE_GID=${REMOTE_UID}
 ARG REMOTE_HOME=/home/${REMOTE_USER}
 
 ARG GIT_EMAIL=lucadibello@proton.me
-ARG GIT_NAME=Luca Di Bello
+ARG GIT_NAME="Luca Di Bello"
 
 ARG GRADLE_VERSION=8.6
 ARG MAVEN_VERSION=3.9.6
@@ -29,7 +29,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NVIM_LISTEN_ADDRESS=127.0.0.1:6666 \
     DEVCONTAINER_USER=${REMOTE_USER} \
     REMOTE_USER=${REMOTE_USER} \
-    REMOTE_HOME=${REMOTE_HOME}
+    REMOTE_HOME=${REMOTE_HOME} \
+    GIT_NAME=${GIT_NAME} \
+    GIT_EMAIL=${GIT_EMAIL}
 
 # Base tooling and build dependencies
 RUN apt-get update \

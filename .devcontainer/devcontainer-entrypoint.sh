@@ -8,7 +8,7 @@ if ! id -u "${REMOTE_USER}" >/dev/null 2>&1; then
 fi
 
 # setup git config for the dev user
-if [ -n "${GIT_NAME:-}" ] && [ -n "${GIT_USER_EMAIL:-}" ]; then
+if [ -n "${GIT_NAME:-}" ] && [ -n "${GIT_EMAIL:-}" ]; then
   sudo -u "$REMOTE_USER" git config --global user.name "$GIT_NAME"
   sudo -u "$REMOTE_USER" git config --global user.email "$GIT_EMAIL"
 fi
