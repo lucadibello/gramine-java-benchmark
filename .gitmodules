@@ -1,0 +1,3 @@
+[submodule "graal-sgx-root"]
+	path = graal-sgx-root
+	url = git@github.com:Yuhala/montsalvat.git
