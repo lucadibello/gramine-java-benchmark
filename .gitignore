@@ -83,3 +83,6 @@ benchmark-results/
 
 # venv
 .venv/
+
+# worktrees
+worktrees/
