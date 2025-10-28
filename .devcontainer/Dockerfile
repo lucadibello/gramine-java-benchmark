@@ -204,14 +204,6 @@ RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GR
 # Install Oh My Zsh for the remote user (non-interactive)
 RUN su - "${REMOTE_USER}" -c 'export RUNZSH=no CHSH=no; sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"'
 
-# Install GraalVM mx tool
-RUN git clone https://github.com/graalvm/mx.git /opt/mx \
-    && chmod +x /opt/mx/mx \
-    && chown -R "dev:ubuntu" /opt/mx
-
-# include mx binaries in path
-RUN echo "export PATH=/opt/mx:$PATH" >> /home/${REMOTE_USER}/.zshrc
-
 # Ensure cache directory exists for headless Neovim logs
 RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
     && mkdir -p "${REMOTE_HOME}"/.cache \
