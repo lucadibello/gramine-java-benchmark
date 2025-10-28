@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
-
-FROM gramineproject/gramine:stable-noble
+# FROM gramineproject/gramine:stable-noble
+FROM teaclave/teaclave-java-tee-sdk:v0.1.0-ubuntu18.04
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -17,7 +17,8 @@ ARG GRADLE_VERSION=8.6
 ARG MAVEN_VERSION=3.9.9
 ARG NEOVIM_ARCHIVE_URL=https://github.com/neovim/neovim-releases/releases/download/v0.11.4/nvim-linux-x86_64.tar.gz
 ARG GRAALVM_ARCHIVE_URL=https://download.oracle.com/graalvm/21/latest/graalvm-jdk-21_linux-x64_bin.tar.gz
-ARG NODE_VERSION=22.20.0
+# ARG NODE_VERSION=22.20.0
+ARG NODE_VERSION=20.19.5
 ARG NODE_ARCH=x64
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -35,6 +36,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Base tooling and build dependencies
 RUN apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository universe \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         autoconf \
         automake \
@@ -42,38 +46,23 @@ RUN apt-get update \
         ca-certificates \
         cmake \
         curl \
-        fd-find \
         g++ \
         gcc \
-        gettext \
         git \
-        git-lfs \
-        gnupg2 \
-        jq \
-        less \
         libtool \
         libtool-bin \
         locales \
         make \
-        musl-dev \
-        musl-tools \
         ninja-build \
         openssh-client \
         openssh-server \
         openssl \
-        procps \
-        pkg-config \
         python3 \
         python3-pip \
-        python3-setuptools \
         python3-venv \
-        python3-wheel \
-        ripgrep \
-        rsync \
         sudo \
         tar \
         tmux \
-        tree \
         unzip \
         wget \
         xz-utils \
@@ -132,32 +121,33 @@ RUN mkdir -p /var/run/sshd \
     && grep -qxF 'X11Forwarding yes' /etc/ssh/sshd_config || echo 'X11Forwarding yes' >> /etc/ssh/sshd_config
 
 # Ensure user directories exist with correct permissions
-RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
-    && mkdir -p "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
-    && chown -R "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
-    && chmod 700 "${REMOTE_HOME}"/.ssh
+#RUN TARGET_GROUP="$(cat /etc/devcontainer-group 2>/dev/null || echo "${REMOTE_GROUP}")" \
+#    && mkdir -p "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
+#    && chown -R "${REMOTE_USER}:${TARGET_GROUP}" "${REMOTE_HOME}"/.cache "${REMOTE_HOME}"/.ssh \
+#    && chmod 700 "${REMOTE_HOME}"/.ssh
 
 # Install GraalVM and native-image tooling
-RUN curl -fsSL "${GRAALVM_ARCHIVE_URL}" -o /tmp/graalvm.tar.gz \
-    && mkdir -p /usr/java/graalvm \
-    && tar -xf /tmp/graalvm.tar.gz --strip-components=1 -C /usr/java/graalvm \
-    && rm /tmp/graalvm.tar.gz \
-    && ln -sf /usr/java/graalvm/bin/java /usr/local/bin/java \
-    && ln -sf /usr/java/graalvm/bin/javac /usr/local/bin/javac
+# NOTE: disabled as the image already includes the correct GraalVM image!
+#RUN curl -fsSL "${GRAALVM_ARCHIVE_URL}" -o /tmp/graalvm.tar.gz \
+#    && mkdir -p /usr/java/graalvm \
+#    && tar -xf /tmp/graalvm.tar.gz --strip-components=1 -C /usr/java/graalvm \
+#    && rm /tmp/graalvm.tar.gz \
+#    && ln -sf /usr/java/graalvm/bin/java /usr/local/bin/java \
+#    && ln -sf /usr/java/graalvm/bin/javac /usr/local/bin/javac
 
 # Install Gradle
-RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
-    && unzip -q /tmp/gradle.zip -d /opt \
-    && rm /tmp/gradle.zip \
-    && mv /opt/gradle-"${GRADLE_VERSION}" /opt/gradle \
-    && ln -sf /opt/gradle/bin/gradle /usr/local/bin/gradle
+#RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
+#    && unzip -q /tmp/gradle.zip -d /opt \
+#    && rm /tmp/gradle.zip \
+#    && mv /opt/gradle-"${GRADLE_VERSION}" /opt/gradle \
+#    && ln -sf /opt/gradle/bin/gradle /usr/local/bin/gradle
 
 # Install Maven 
-RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/maven.tar.gz \
-    && tar -xzf /tmp/maven.tar.gz -C /opt \
-    && rm /tmp/maven.tar.gz \
-    && mv /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
-    && ln -sf /opt/maven/bin/mvn /usr/local/bin/mvn
+#RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/maven.tar.gz \
+#    && tar -xzf /tmp/maven.tar.gz -C /opt \
+#    && rm /tmp/maven.tar.gz \
+#    && mv /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
+#    && ln -sf /opt/maven/bin/mvn /usr/local/bin/mvn
 
 # Install Neovim 0.11 (nightly channel) and Python support
 RUN curl -fsSL "${NEOVIM_ARCHIVE_URL}" -o /tmp/nvim.tar.gz \
@@ -167,6 +157,11 @@ RUN curl -fsSL "${NEOVIM_ARCHIVE_URL}" -o /tmp/nvim.tar.gz \
     && ln -sf /opt/nvim/bin/nvim /usr/local/bin/nvim
 # RUN python3 -m pip install --no-cache-dir pynvim
 
+# Install ripgrep
+RUN curl -fsSL https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep_14.1.1-1_amd64.deb -o /tmp/ripgrep.deb \
+    && dpkg -i /tmp/ripgrep.deb \
+    && rm /tmp/ripgrep.deb
+
 # lazygit (binary release)
 RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | \grep -Po '"tag_name": *"v\K[^"]*') && \
   curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" && \
@@ -175,18 +170,18 @@ RUN LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygi
   echo "LazyGit installed successfully."
 
 # install Node.JS LST (useful for tools!)
-RUN set -eux; \
-    echo "Installing Node.js v${NODE_VERSION} for ${NODE_ARCH}..." && \
-    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
-    tar -xf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
-    mv "node-v${NODE_VERSION}-linux-${NODE_ARCH}" /usr/local/node-v${NODE_VERSION} && \
-    ln -sf /usr/local/node-v${NODE_VERSION}/bin/node /usr/local/bin/node && \
-    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npm /usr/local/bin/npm && \
-    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npx /usr/local/bin/npx && \
-    echo "Verifying Node.js installation..." && \
-    node -v && npm -v && \
-    rm -rf /tmp/node-v${NODE_VERSION}-linux-${NODE_ARCH}* && \
-    echo "Node.js installed successfully."
+#RUN set -eux; \
+#    echo "Installing Node.js v${NODE_VERSION} for ${NODE_ARCH}..." && \
+#    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+#    tar -xf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+#    mv "node-v${NODE_VERSION}-linux-${NODE_ARCH}" /usr/local/node-v${NODE_VERSION} && \
+#    ln -sf /usr/local/node-v${NODE_VERSION}/bin/node /usr/local/bin/node && \
+#    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npm /usr/local/bin/npm && \
+#    ln -sf /usr/local/node-v${NODE_VERSION}/bin/npx /usr/local/bin/npx && \
+#    echo "Verifying Node.js installation..." && \
+#    node -v && npm -v && \
+#    rm -rf /tmp/node-v${NODE_VERSION}-linux-${NODE_ARCH}* && \
+#    echo "Node.js installed successfully."
 
 # Provide entrypoint that keeps the headless Neovim server alive
 COPY .devcontainer/devcontainer-entrypoint.sh /usr/local/bin/devcontainer-entrypoint

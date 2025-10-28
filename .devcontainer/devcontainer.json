@@ -1,16 +1,13 @@
 {
     "name": "Gramine Java Benchmark",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "context": ".."
-    },
-    "remoteUser": "dev",
-    "overrideCommand": false,
+    "image": "teaclave/teaclave-java-tee-sdk:v0.1.0-ubuntu18.04",
+    "remoteUser": "root",
     "runArgs": [
         "--name=gramine-java-sgx",
-        "--device=/dev/sgx_enclave:/dev/sgx_enclave",
-        "--device=/dev/sgx_provision:/dev/sgx_provision",
-        "--device=/dev/sgx_vepc:/dev/sgx_vepc",
+	"--privileged",
+        "--device=/dev/sgx_enclave:/dev/sgx/enclave",
+        "--device=/dev/sgx_provision:/dev/sgx/provision",
+        "--device=/dev/sgx_vepc:/dev/sgx/vepc",
         "--publish",
         "127.0.0.1:2222:2222",
         "--publish",
@@ -18,14 +15,9 @@
     ],
     "forwardPorts": [2222],
     "mounts": ["source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"],
-    "hostRequirements": {
-        "cpus": 2,
-        "memory": "4gb"
-    },
-    "workspaceFolder":"/workspaces/gramine-java-sgx",
+    "workspaceFolder":"/workspaces/gramine-java-benchmark",
     "containerEnv": {
         "SSH_AUTH_SOCK": "/ssh-agent",
         "NVIM_LISTEN_ADDRESS": "0.0.0.0:6666"
-    },
-    "postCreateCommand": "echo '=== Verifying musl installation ===' && x86_64-linux-musl-gcc --version && echo '✓ musl-gcc is available' || echo '✗ musl-gcc not found'"
+    }
 }
