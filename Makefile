@@ -31,29 +31,25 @@ TARGET_DIR = target
 CLASSES_DIR = $(TARGET_DIR)/classes
 BIN_DIR = $(TARGET_DIR)/bin
 
-SERVER_SOURCE_FILES = \
-	src/server/BenchServer.java
+SERVER_SOURCE_FILES := $(shell find src/server -name '*.java')
+CLIENT_SOURCE_FILES := $(shell find src/client -name '*.java')
 
-CLIENT_SOURCE_FILES = \
-	src/client/BenchClient.java
-
-# Since Java files don't have package declarations, they compile to target/classes/*.class
-SERVER_CLASS_FILES = $(CLASSES_DIR)/BenchServer.class
-CLIENT_CLASS_FILES = $(CLASSES_DIR)/BenchClient.class
+SERVER_CLASS_FILES = $(CLASSES_DIR)/com/benchmark/gramine/enclave/BenchServer.class
+CLIENT_CLASS_FILES = $(CLASSES_DIR)/com/benchmark/gramine/host/BenchClient.class
 
 # Native image targets (only for native-bench)
 NATIVE_SERVER = $(BIN_DIR)/BenchServer
 NATIVE_CLIENT = $(BIN_DIR)/BenchClient
 
 # Compile server Java files
-$(CLASSES_DIR)/BenchServer.class: src/server/BenchServer.java | $(CLASSES_DIR)
-	@echo "-- Compiling Java source: $< --"
-	$(JAVAC) -d $(CLASSES_DIR) -cp $(CLASSES_DIR) $<
+$(CLASSES_DIR)/com/benchmark/gramine/enclave/BenchServer.class: $(SERVER_SOURCE_FILES) | $(CLASSES_DIR)
+	@echo "-- Compiling server sources --"
+	$(JAVAC) -d $(CLASSES_DIR) $(SERVER_SOURCE_FILES)
 
 # Compile client Java files
-$(CLASSES_DIR)/BenchClient.class: src/client/BenchClient.java | $(CLASSES_DIR)
-	@echo "-- Compiling Java source: $< --"
-	$(JAVAC) -d $(CLASSES_DIR) -cp $(CLASSES_DIR) $<
+$(CLASSES_DIR)/com/benchmark/gramine/host/BenchClient.class: $(CLIENT_SOURCE_FILES) | $(CLASSES_DIR)
+	@echo "-- Compiling client sources --"
+	$(JAVAC) -d $(CLASSES_DIR) $(CLIENT_SOURCE_FILES)
 
 $(TARGET_DIR):
 	@echo "-- Creating target directory: $(TARGET_DIR) --"
