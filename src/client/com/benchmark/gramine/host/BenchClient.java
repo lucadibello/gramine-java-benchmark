@@ -120,53 +120,51 @@ public final class BenchClient {
             Arrays.stream(strongThreadCounts).min().orElse(Integer.MAX_VALUE)));
         int nativeParallelism = nativeParallelismOverride != null ? nativeParallelismOverride
             : resolveNativeParallelism();
-        String executionMode = executionModeOverride != null ? executionModeOverride
-            : System.getenv(ENV_EXECUTION_MODE);
-        if (executionMode == null || executionMode.isBlank()) {
-            executionMode = "GRAMINE_TLS_ENCLAVE";
-        }
 
-        try (AggregationService service = new TlsAggregationClient(host, port, truststorePath, truststorePassword);
-             BenchmarkRunner runner = new BenchmarkRunner(service, nativeParallelism)) {
+        try (AggregationService service = new TlsAggregationClient(host, port, truststorePath, truststorePassword)) {
+            BenchmarkRunner runner = new BenchmarkRunner(service, nativeParallelism);
             BenchmarkRunner.WorkloadSettings workloadSettings =
                 BenchmarkRunner.WorkloadSettings.fromEnvironment(sigma);
+            System.out.println("Preparing workload with settings: " + workloadSettings);
+
             BenchmarkRunner.Workload workload =
                 runner.prepareWorkload(workloadSettings, baselineThreads);
+
+            System.out.println("Starting weak scaling bench with workload: " + workload);
             var weakResults = runner.runWeakScaling(workload, weakThreadCounts);
+
+            System.out.println("Starting strong scaling bench...");
             var strongResults = runner.runStrongScaling(workload, strongThreadCounts);
+
             BenchmarkRunner.BenchmarkSummary summary =
-                new BenchmarkRunner.BenchmarkSummary(workloadSettings, executionMode, workload,
+                new BenchmarkRunner.BenchmarkSummary(workloadSettings, workload,
                     weakThreadCounts, weakResults, strongThreadCounts, strongResults, nativeParallelism);
 
             System.out.println("== Benchmark Summary ==");
             System.out.println(summary.toPrettyString());
             System.out.println();
-            System.out.println("-- Weak Scaling --");
-            printWeakScalingResults(weakResults.iterator());
-            System.out.println("-- Strong Scaling --");
-            printStrongScalingResults(strongResults.iterator());
         }
     }
 
-    private static void printWeakScalingResults(Iterator<BenchmarkRunner.WeakScalingResult> iterator) {
-        while (iterator.hasNext()) {
-            BenchmarkRunner.WeakScalingResult result = iterator.next();
-            System.out.println(String.format(Locale.US,
-                "threads=%d (executed=%d) perThreadSize=%d iterations=%d avgTime=%.3f ms",
-                result.getRequestedThreadCount(), result.getExecutedThreadCount(),
-                result.getDataSize(), result.getIterations(), result.getAverageMillis()));
-        }
-    }
+    // private static void printWeakScalingResults(Iterator<BenchmarkRunner.WeakScalingResult> iterator) {
+    //     while (iterator.hasNext()) {
+    //         BenchmarkRunner.WeakScalingResult result = iterator.next();
+    //         System.out.println(String.format(Locale.US,
+    //             "threads=%d (executed=%d) perThreadSize=%d iterations=%d avgTime=%.3f ms",
+    //             result.getRequestedThreadCount(), result.getExecutedThreadCount(),
+    //             result.getDataSize(), result.getIterations(), result.getAverageMillis()));
+    //     }
+    // }
 
-    private static void printStrongScalingResults(Iterator<BenchmarkRunner.StrongScalingResult> iterator) {
-        while (iterator.hasNext()) {
-            BenchmarkRunner.StrongScalingResult result = iterator.next();
-            System.out.println(String.format(Locale.US,
-                "threads=%d (executed=%d) totalSize=%d iterations=%d avgTime=%.3f ms",
-                result.getRequestedThreadCount(), result.getExecutedThreadCount(),
-                result.getTotalSize(), result.getIterations(), result.getAverageMillis()));
-        }
-    }
+    // private static void printStrongScalingResults(Iterator<BenchmarkRunner.StrongScalingResult> iterator) {
+    //     while (iterator.hasNext()) {
+    //         BenchmarkRunner.StrongScalingResult result = iterator.next();
+    //         System.out.println(String.format(Locale.US,
+    //             "threads=%d (executed=%d) totalSize=%d iterations=%d avgTime=%.3f ms",
+    //             result.getRequestedThreadCount(), result.getExecutedThreadCount(),
+    //             result.getTotalSize(), result.getIterations(), result.getAverageMillis()));
+    //     }
+    // }
 
     private static int[] parseThreadArray(String raw) {
         if (raw == null || raw.isEmpty()) {

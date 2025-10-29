@@ -36,6 +36,8 @@ CLIENT_SOURCE_FILES := $(shell find src/client -name '*.java')
 
 SERVER_CLASS_FILES = $(CLASSES_DIR)/com/benchmark/gramine/enclave/BenchServer.class
 CLIENT_CLASS_FILES = $(CLASSES_DIR)/com/benchmark/gramine/host/BenchClient.class
+SERVER_MAIN_CLASS = com.benchmark.gramine.enclave.BenchServer
+CLIENT_MAIN_CLASS = com.benchmark.gramine.host.BenchClient
 
 # Native image targets (only for native-bench)
 NATIVE_SERVER = $(BIN_DIR)/BenchServer
@@ -103,7 +105,7 @@ ifeq ($(STATIC_NATIVE),1)
 			-H:+ReportExceptionStackTraces \
 			-H:-UseCompressedReferences \
 			-R:MaxHeapSize=2g \
-			BenchServer
+			$(SERVER_MAIN_CLASS)
 else
 	@echo "-- Using gcc for dynamic build with glibc --"
 		$(NATIVE_IMAGE) -cp $(CLASSES_DIR) \
@@ -114,7 +116,7 @@ else
 			-H:+ReportExceptionStackTraces \
 			-H:-UseCompressedReferences \
 			-R:MaxHeapSize=2g \
-			BenchServer
+			$(SERVER_MAIN_CLASS)
 endif
 
 $(NATIVE_CLIENT): $(CLIENT_CLASS_FILES) | $(BIN_DIR)
@@ -134,7 +136,7 @@ ifeq ($(STATIC_NATIVE),1)
 			-H:+ReportExceptionStackTraces \
 			-H:-UseCompressedReferences \
 			-R:MaxHeapSize=2g \
-			BenchClient
+			$(CLIENT_MAIN_CLASS)
 else
 	@echo "-- Using gcc for dynamic build with glibc --"
 		$(NATIVE_IMAGE) -cp $(CLASSES_DIR) \
@@ -145,7 +147,7 @@ else
 			-H:+ReportExceptionStackTraces \
 			-H:-UseCompressedReferences \
 			-R:MaxHeapSize=2g \
-			BenchClient
+			$(CLIENT_MAIN_CLASS)
 endif
 
 .PHONY: native
@@ -214,17 +216,17 @@ run:
 .PHONY: run-server
 run-server: server certs
 	@echo "-- Running BenchServer --"
-	java -cp $(CLASSES_DIR) server.BenchServer
+	java -cp $(CLASSES_DIR) $(SERVER_MAIN_CLASS)
 
 .PHONY: run-server-sgx
 run-server-sgx:
 	@echo "-- Running BenchServer in SGX --"
-	gramine-sgx ${APP_NAME} -cp /app/classes server.BenchServer
+	gramine-sgx ${APP_NAME} -cp /app/classes $(SERVER_MAIN_CLASS)
 
 .PHONY: run-client
-run-client: client certs
+run-client:
 	@echo "-- Running BenchClient --"
-	java -cp $(CLASSES_DIR) client.BenchClient
+	java -cp $(CLASSES_DIR) $(CLIENT_MAIN_CLASS)
 
 .PHONY: distclean
 distclean: clean
