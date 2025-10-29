@@ -119,13 +119,6 @@ def build_variant_configs(
     def with_sudo(cmd: Iterable[str]) -> List[str]:
         return sudo_prefix + list(cmd) if sudo_prefix else list(cmd)
 
-    base_server_args = [
-        "--keystore",
-        str(paths.keystore),
-        "--password",
-        "changeit",
-    ]
-
     variants: Dict[str, VariantConfig] = {
         "jvm-local": VariantConfig(
             name="jvm-local",
@@ -137,7 +130,10 @@ def build_variant_configs(
                 "com.benchmark.gramine.enclave.BenchServer",
                 "--port",
                 "8443",
-                *base_server_args,
+                "--keystore",
+                str(paths.keystore),
+                "--password",
+                "changeit",
             ],
             env={},
             build_steps=[["make", "server"]],
@@ -155,7 +151,10 @@ def build_variant_configs(
                     "com.benchmark.gramine.enclave.BenchServer",
                     "--port",
                     "8444",
-                    *base_server_args,
+                    "--keystore",
+                    "server.keystore",
+                    "--password",
+                    "changeit",
                 ]
             ),
             env={},
@@ -179,7 +178,10 @@ def build_variant_configs(
                     "native-bench-dynamic",
                     "--port",
                     "8445",
-                    *base_server_args,
+                    "--keystore",
+                    "server.keystore",
+                    "--password",
+                    "changeit",
                 ]
             ),
             env={"APP_BIN": "BenchServer"},
@@ -203,7 +205,10 @@ def build_variant_configs(
                     "native-bench-static",
                     "--port",
                     "8446",
-                    *base_server_args,
+                    "--keystore",
+                    "server.keystore",
+                    "--password",
+                    "changeit",
                 ]
             ),
             env={"APP_BIN": "BenchServer"},
@@ -343,10 +348,10 @@ class BenchmarkCoordinator:
             config.server_cmd,
             cwd=self.paths.root,
             env=merged_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
             text=True,
         )
+        # stdout=subprocess.DEVNULL,
+        # stderr=subprocess.DEVNULL,
 
         try:
             start_time = time.time()
