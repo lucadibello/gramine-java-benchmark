@@ -18,13 +18,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-final class BenchmarkRunner {
+final class BenchmarkRunner implements AutoCloseable {
 
     private static final double NANOS_IN_MILLI = 1_000_000.0;
 
     private final AggregationService service;
     private final Random random;
     private final int maxNativeParallelism;
+    private final ExecutorService executor;
 
     BenchmarkRunner(AggregationService service) {
         this(service, new Random(0L));
@@ -42,6 +43,7 @@ final class BenchmarkRunner {
         this.service = service;
         this.random = random;
         this.maxNativeParallelism = maxNativeParallelism <= 0 ? Integer.MAX_VALUE : maxNativeParallelism;
+        this.executor = createExecutor(this.maxNativeParallelism);
     }
 
     int getMaxNativeParallelism() {
@@ -133,63 +135,49 @@ final class BenchmarkRunner {
         service.initBinaryAggregation(dataset.length, sigma);
         int chunkSize = Math.max(1, (dataset.length + effectiveThreads - 1) / effectiveThreads);
         List<Future<?>> futures = new ArrayList<>(effectiveThreads);
-        ExecutorService executor = createExecutor(effectiveThreads);
-        try {
-            for (int t = 0; t < effectiveThreads; t++) {
-                int start = t * chunkSize;
-                int end = Math.min(dataset.length, start + chunkSize);
-                if (start >= end) {
-                    break;
+        for (int t = 0; t < effectiveThreads; t++) {
+            int start = t * chunkSize;
+            int end = Math.min(dataset.length, start + chunkSize);
+            if (start >= end) {
+                break;
+            }
+            final int sliceStart = start;
+            final int sliceEnd = end;
+            futures.add(executor.submit(() -> {
+                for (int idx = sliceStart; idx < sliceEnd; idx++) {
+                    service.addToBinaryAggregation(dataset[idx]);
                 }
-                final int sliceStart = start;
-                final int sliceEnd = end;
-                futures.add(executor.submit(() -> {
-                    for (int idx = sliceStart; idx < sliceEnd; idx++) {
-                        service.addToBinaryAggregation(dataset[idx]);
-                    }
-                }));
-            }
+            }));
+        }
 
-            Throwable failure = null;
-            for (Future<?> future : futures) {
-                try {
-                    future.get();
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    cancelFutures(futures);
-                    throw new IllegalStateException("Benchmark interrupted", ie);
-                } catch (ExecutionException ee) {
-                    failure = ee.getCause() == null ? ee : ee.getCause();
-                    cancelFutures(futures);
-                    break;
-                }
-            }
-
-            if (failure != null) {
-                if (failure instanceof RuntimeException) {
-                    throw (RuntimeException) failure;
-                }
-                throw new IllegalStateException("Worker thread failed", failure);
-            }
-
-            double total = service.getBinaryAggregationSum();
-            perturbDataset(dataset);
-            if (Double.isNaN(total)) {
-                throw new IllegalStateException("Aggregation sum produced NaN");
-            }
-            return total;
-        } finally {
-            // await termination of executor
+        Throwable failure = null;
+        for (Future<?> future : futures) {
             try {
-                executor.shutdown();
-                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                }
+                future.get();
             } catch (InterruptedException ie) {
-                executor.shutdownNow();
                 Thread.currentThread().interrupt();
+                cancelFutures(futures);
+                throw new IllegalStateException("Benchmark interrupted", ie);
+            } catch (ExecutionException ee) {
+                failure = ee.getCause() == null ? ee : ee.getCause();
+                cancelFutures(futures);
+                break;
             }
         }
+
+        if (failure != null) {
+            if (failure instanceof RuntimeException) {
+                throw (RuntimeException) failure;
+            }
+            throw new IllegalStateException("Worker thread failed", failure);
+        }
+
+        double total = service.getBinaryAggregationSum();
+        perturbDataset(dataset);
+        if (Double.isNaN(total)) {
+            throw new IllegalStateException("Aggregation sum produced NaN");
+        }
+        return total;
     }
 
     private ExecutorService createExecutor(int nativeParallelism) {
@@ -229,6 +217,19 @@ final class BenchmarkRunner {
     private void cancelFutures(List<Future<?>> futures) {
         for (Future<?> future : futures) {
             future.cancel(true);
+        }
+    }
+
+    @Override
+    public void close() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException ie) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 

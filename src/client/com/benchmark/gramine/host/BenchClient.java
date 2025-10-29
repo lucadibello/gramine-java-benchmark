@@ -3,8 +3,6 @@ package com.benchmark.gramine.host;
 import com.benchmark.gramine.common.AggregationService;
 
 import java.util.Arrays;
-import java.util.Iterator;
-import java.util.Locale;
 
 public final class BenchClient {
 
@@ -31,7 +29,6 @@ public final class BenchClient {
         int[] weakThreadOverride = null;
         int[] strongThreadOverride = null;
         Integer nativeParallelismOverride = null;
-        String executionModeOverride = null;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -95,13 +92,6 @@ public final class BenchClient {
                         exitUsage("Missing value for --max-native");
                     }
                     break;
-                case "--mode":
-                    if (i + 1 < args.length) {
-                        executionModeOverride = args[++i];
-                    } else {
-                        exitUsage("Missing value for --mode");
-                    }
-                    break;
                 case "--help":
                     printUsage();
                     return;
@@ -121,8 +111,8 @@ public final class BenchClient {
         int nativeParallelism = nativeParallelismOverride != null ? nativeParallelismOverride
             : resolveNativeParallelism();
 
-        try (AggregationService service = new TlsAggregationClient(host, port, truststorePath, truststorePassword)) {
-            BenchmarkRunner runner = new BenchmarkRunner(service, nativeParallelism);
+        try (AggregationService service = new TlsAggregationClient(host, port, truststorePath, truststorePassword);
+            BenchmarkRunner runner = new BenchmarkRunner(service, nativeParallelism)) {
             BenchmarkRunner.WorkloadSettings workloadSettings =
                 BenchmarkRunner.WorkloadSettings.fromEnvironment(sigma);
             System.out.println("Preparing workload with settings: " + workloadSettings);

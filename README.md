@@ -202,16 +202,13 @@ python3 tools/run-benchmarks.py --help
 ```
 
 **Benchmark Types:**
-- **Strong Scaling**: Fixed total workload (default: 1000 messages) distributed across 1, 2, 4, 8, 16 clients
-- **Weak Scaling**: Fixed per-client workload (default: 100 messages) across 1, 2, 4, 8, 16 clients
-- **Multiple runs**: Each configuration runs 3 times (configurable) for statistical significance
+- **Strong Scaling**: Fixed total workload; metrics are captured from the benchmark summary emitted by the client.
+- **Weak Scaling**: Fixed per-client workload; metrics are captured from the benchmark summary emitted by the client.
 
-Results are saved to `scaling-results/<timestamp>/` with:
-- `strong_scaling.csv` - Strong scaling metrics with speedup/efficiency
-- `weak_scaling.csv` - Weak scaling metrics with speedup/efficiency
-- `startup_times.csv` - Server startup time measurements
-- `scaling_report.txt` - Comprehensive human-readable report
-- `raw_results.json` - Complete raw data for custom analysis
+Each execution writes artifacts to `scaling-results/<timestamp>/`:
+- `benchmark_results.json` – combined JSON payload with one Teaclave-style summary per variant
+- `scaling_results.csv` – flattened CSV containing both strong and weak scaling rows for all variants
+- `logs/*.out` – raw client output for auditing (matching `.err` files are emitted if the client prints to stderr)
 
 ## Protocol
 
