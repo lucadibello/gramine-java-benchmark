@@ -115,15 +115,9 @@ public final class BenchClient {
             BenchmarkRunner runner = new BenchmarkRunner(service, nativeParallelism)) {
             BenchmarkRunner.WorkloadSettings workloadSettings =
                 BenchmarkRunner.WorkloadSettings.fromEnvironment(sigma);
-            System.out.println("Preparing workload with settings: " + workloadSettings);
-
             BenchmarkRunner.Workload workload =
                 runner.prepareWorkload(workloadSettings, baselineThreads);
-
-            System.out.println("Starting weak scaling bench with workload: " + workload);
             var weakResults = runner.runWeakScaling(workload, weakThreadCounts);
-
-            System.out.println("Starting strong scaling bench...");
             var strongResults = runner.runStrongScaling(workload, strongThreadCounts);
 
             BenchmarkRunner.BenchmarkSummary summary =
@@ -135,26 +129,6 @@ public final class BenchClient {
             System.out.println();
         }
     }
-
-    // private static void printWeakScalingResults(Iterator<BenchmarkRunner.WeakScalingResult> iterator) {
-    //     while (iterator.hasNext()) {
-    //         BenchmarkRunner.WeakScalingResult result = iterator.next();
-    //         System.out.println(String.format(Locale.US,
-    //             "threads=%d (executed=%d) perThreadSize=%d iterations=%d avgTime=%.3f ms",
-    //             result.getRequestedThreadCount(), result.getExecutedThreadCount(),
-    //             result.getDataSize(), result.getIterations(), result.getAverageMillis()));
-    //     }
-    // }
-
-    // private static void printStrongScalingResults(Iterator<BenchmarkRunner.StrongScalingResult> iterator) {
-    //     while (iterator.hasNext()) {
-    //         BenchmarkRunner.StrongScalingResult result = iterator.next();
-    //         System.out.println(String.format(Locale.US,
-    //             "threads=%d (executed=%d) totalSize=%d iterations=%d avgTime=%.3f ms",
-    //             result.getRequestedThreadCount(), result.getExecutedThreadCount(),
-    //             result.getTotalSize(), result.getIterations(), result.getAverageMillis()));
-    //     }
-    // }
 
     private static int[] parseThreadArray(String raw) {
         if (raw == null || raw.isEmpty()) {

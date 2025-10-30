@@ -18,8 +18,11 @@ import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.SynchronousQueue;
 
 /**
  * TLS server exposing a Binary Aggregation Tree service to the benchmark client.
@@ -27,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 public final class BenchServer {
 
     private static final int DEFAULT_PORT = 8443;
-    private static final int THREAD_POOL_SIZE = 16;
     private static final String KEYSTORE_TYPE = "JKS";
     private static final String TLS_PROTOCOL = "TLSv1.2";
 
@@ -35,6 +37,7 @@ public final class BenchServer {
     private static final String CMD_ADD = "ADD";
     private static final String CMD_GET = "GET";
     private static final String CMD_QUIT = "QUIT";
+    private static final String CMD_RESET = "RESET";
 
     private final int port;
     private final ExecutorService executor;
@@ -44,7 +47,22 @@ public final class BenchServer {
 
     public BenchServer(int port) {
         this.port = port;
-        this.executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        AtomicInteger counter = new AtomicInteger();
+        ThreadFactory factory = runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setName("aggregation-client-handler-" + counter.getAndIncrement());
+            thread.setDaemon(true);
+            return thread;
+        };
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
+            0,
+            Integer.MAX_VALUE,
+            60L,
+            TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            factory);
+        pool.allowCoreThreadTimeOut(true);
+        this.executor = pool;
         this.aggregationContext = new AggregationContext();
         this.running = false;
     }
@@ -179,7 +197,6 @@ public final class BenchServer {
         @Override
         public void run() {
             String remote = socket.getInetAddress() + ":" + socket.getPort();
-            System.out.println("Client connected: " + remote);
             try (SSLSocket client = socket;
                  BufferedReader reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
                  BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(client.getOutputStream()))) {
@@ -195,9 +212,15 @@ public final class BenchServer {
                     handleCommand(line, writer);
                 }
             } catch (IOException ioe) {
-                System.err.println("Connection error: " + ioe.getMessage());
+                if (!socket.isClosed()) {
+                    System.err.println("Connection error: " + ioe.getMessage());
+                }
             } finally {
-                System.out.println("Client disconnected: " + remote);
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                    // Already closing.
+                }
             }
         }
 
@@ -213,6 +236,9 @@ public final class BenchServer {
                     break;
                 case CMD_GET:
                     handleGet(writer);
+                    break;
+                case CMD_RESET:
+                    handleReset(writer);
                     break;
                 case CMD_QUIT:
                     writer.write("BYE\n");
@@ -269,6 +295,12 @@ public final class BenchServer {
             }
         }
 
+        private void handleReset(BufferedWriter writer) throws IOException {
+            context.reset();
+            writer.write("OK\n");
+            writer.flush();
+        }
+
         private void sendError(BufferedWriter writer, String message) throws IOException {
             writer.write("ERROR|" + message + "\n");
             writer.flush();
@@ -314,5 +346,13 @@ public final class BenchServer {
                 throw new IllegalStateException("Binary aggregation tree not initialised");
             }
         }
+
+        synchronized void reset() {
+            tree = null;
+            capacity = 0;
+            index = 0;
+            lastPrivateSum = 0.0;
+        }
+
     }
 }

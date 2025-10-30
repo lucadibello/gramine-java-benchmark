@@ -177,6 +177,7 @@ final class BenchmarkRunner implements AutoCloseable {
         if (Double.isNaN(total)) {
             throw new IllegalStateException("Aggregation sum produced NaN");
         }
+        service.resetBinaryAggregation();
         return total;
     }
 
