@@ -338,6 +338,8 @@ class BenchmarkCoordinator:
         merged_env.update(config.env)
 
         if config.build_steps:
+            print(f"[INFO] Cleaning workspace before building '{config.name}'...")
+            subprocess.run(["make", "clean"], cwd=self.paths.root, check=True)
             print(f"[INFO] Building artifacts for variant '{config.name}'...")
             for step in config.build_steps:
                 subprocess.run(step, cwd=self.paths.root, check=True)
