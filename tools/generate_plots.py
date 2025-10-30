@@ -83,7 +83,7 @@ def _compute_metrics(entries: Iterable[ScalingEntry]) -> Dict[str, np.ndarray]:
     duration = np.array([item.duration_seconds for item in entries], dtype=float)
 
     throughput = work / duration
-    baseline = throughput[0]
+    baseline = throughput[threads.argmin()]
     speedup = throughput / baseline
     efficiency = speedup / threads
 
