@@ -222,7 +222,7 @@ run-server: server certs
 run-server-sgx:
 	@echo "-- Running BenchServer in SGX --"
 	gramine-sgx ${APP_NAME} -cp /app/classes $(SERVER_MAIN_CLASS)
-python3 scripts/generate_plots.py --results scaling-results/20251030_004543/scaling_results.csv --startup scaling-results/20251030_004543/benchmark_results.json --output plots
+
 .PHONY: run-client
 run-client:
 	@echo "-- Running BenchClient --"
