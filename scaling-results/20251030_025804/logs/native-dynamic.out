@@ -1,0 +1,39 @@
+== Benchmark Summary ==
+{
+  "settings": {
+    "sigma": 0.500000,
+    "dataSize": 1024,
+    "warmupIterations": 3,
+    "measureIterations": 5,
+    "weakThreadCounts": [1,2,4,8,16,32],
+    "strongThreadCounts": [1,2,4,8,16,32],
+    "maxNativeThreadsSupported": 32,
+    "maxNativeThreadsUsed": 32
+  },
+  "workload": {
+    "dataSize": 1024,
+    "sigma": 0.500000,
+    "warmupIterations": 3,
+    "measureIterations": 5,
+    "avgTimeMillis": 120.437,
+    "requestedThreads": 1,
+    "executedThreads": 1
+  },
+  "weakScaling": [
+    {"threads": 1, "executedThreads": 1, "dataSize": 1024, "iterations": 5, "avgTimeMillis": 106.659},
+    {"threads": 2, "executedThreads": 2, "dataSize": 2048, "iterations": 5, "avgTimeMillis": 107.402},
+    {"threads": 4, "executedThreads": 4, "dataSize": 4096, "iterations": 5, "avgTimeMillis": 120.705},
+    {"threads": 8, "executedThreads": 8, "dataSize": 8192, "iterations": 5, "avgTimeMillis": 130.028},
+    {"threads": 16, "executedThreads": 16, "dataSize": 16384, "iterations": 5, "avgTimeMillis": 243.173},
+    {"threads": 32, "executedThreads": 32, "dataSize": 32768, "iterations": 5, "avgTimeMillis": 462.687}
+  ],
+  "strongScaling": [
+    {"threads": 1, "executedThreads": 1, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 106.277},
+    {"threads": 2, "executedThreads": 2, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 87.098},
+    {"threads": 4, "executedThreads": 4, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 73.305},
+    {"threads": 8, "executedThreads": 8, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 79.192},
+    {"threads": 16, "executedThreads": 16, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 99.856},
+    {"threads": 32, "executedThreads": 32, "totalSize": 1024, "iterations": 5, "avgTimeMillis": 100.550}
+  ]
+}
+

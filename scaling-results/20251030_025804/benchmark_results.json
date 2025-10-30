@@ -1,0 +1,513 @@
+{
+  "generatedAt": "2025-10-30T02:58:04.100259",
+  "variants": [
+    {
+      "name": "jvm-local",
+      "startupTimeSeconds": 1.0,
+      "summary": {
+        "settings": {
+          "sigma": 0.5,
+          "dataSize": 1024,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "weakThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "strongThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "maxNativeThreadsSupported": 32,
+          "maxNativeThreadsUsed": 32
+        },
+        "workload": {
+          "dataSize": 1024,
+          "sigma": 0.5,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "avgTimeMillis": 99.838,
+          "requestedThreads": 1,
+          "executedThreads": 1
+        },
+        "weakScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "dataSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 74.576
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "dataSize": 2048,
+            "iterations": 5,
+            "avgTimeMillis": 72.79
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "dataSize": 4096,
+            "iterations": 5,
+            "avgTimeMillis": 78.512
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "dataSize": 8192,
+            "iterations": 5,
+            "avgTimeMillis": 85.585
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "dataSize": 16384,
+            "iterations": 5,
+            "avgTimeMillis": 117.038
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "dataSize": 32768,
+            "iterations": 5,
+            "avgTimeMillis": 164.128
+          }
+        ],
+        "strongScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 66.337
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 60.079
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 53.246
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 60.796
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 98.371
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 99.082
+          }
+        ]
+      }
+    },
+    {
+      "name": "jvm-gramine",
+      "startupTimeSeconds": 54.009,
+      "summary": {
+        "settings": {
+          "sigma": 0.5,
+          "dataSize": 1024,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "weakThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "strongThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "maxNativeThreadsSupported": 32,
+          "maxNativeThreadsUsed": 32
+        },
+        "workload": {
+          "dataSize": 1024,
+          "sigma": 0.5,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "avgTimeMillis": 280.801,
+          "requestedThreads": 1,
+          "executedThreads": 1
+        },
+        "weakScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "dataSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 307.567
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "dataSize": 2048,
+            "iterations": 5,
+            "avgTimeMillis": 290.112
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "dataSize": 4096,
+            "iterations": 5,
+            "avgTimeMillis": 439.572
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "dataSize": 8192,
+            "iterations": 5,
+            "avgTimeMillis": 1014.851
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "dataSize": 16384,
+            "iterations": 5,
+            "avgTimeMillis": 2269.809
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "dataSize": 32768,
+            "iterations": 5,
+            "avgTimeMillis": 8889.863
+          }
+        ],
+        "strongScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 506.235
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 424.893
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 406.048
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 430.36
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 478.82
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 533.454
+          }
+        ]
+      }
+    },
+    {
+      "name": "native-dynamic",
+      "startupTimeSeconds": 24.003,
+      "summary": {
+        "settings": {
+          "sigma": 0.5,
+          "dataSize": 1024,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "weakThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "strongThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "maxNativeThreadsSupported": 32,
+          "maxNativeThreadsUsed": 32
+        },
+        "workload": {
+          "dataSize": 1024,
+          "sigma": 0.5,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "avgTimeMillis": 120.437,
+          "requestedThreads": 1,
+          "executedThreads": 1
+        },
+        "weakScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "dataSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 106.659
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "dataSize": 2048,
+            "iterations": 5,
+            "avgTimeMillis": 107.402
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "dataSize": 4096,
+            "iterations": 5,
+            "avgTimeMillis": 120.705
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "dataSize": 8192,
+            "iterations": 5,
+            "avgTimeMillis": 130.028
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "dataSize": 16384,
+            "iterations": 5,
+            "avgTimeMillis": 243.173
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "dataSize": 32768,
+            "iterations": 5,
+            "avgTimeMillis": 462.687
+          }
+        ],
+        "strongScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 106.277
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 87.098
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 73.305
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 79.192
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 99.856
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 100.55
+          }
+        ]
+      }
+    },
+    {
+      "name": "native-static",
+      "startupTimeSeconds": 21.003,
+      "summary": {
+        "settings": {
+          "sigma": 0.5,
+          "dataSize": 1024,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "weakThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "strongThreadCounts": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "maxNativeThreadsSupported": 32,
+          "maxNativeThreadsUsed": 32
+        },
+        "workload": {
+          "dataSize": 1024,
+          "sigma": 0.5,
+          "warmupIterations": 3,
+          "measureIterations": 5,
+          "avgTimeMillis": 162.099,
+          "requestedThreads": 1,
+          "executedThreads": 1
+        },
+        "weakScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "dataSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 144.219
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "dataSize": 2048,
+            "iterations": 5,
+            "avgTimeMillis": 151.257
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "dataSize": 4096,
+            "iterations": 5,
+            "avgTimeMillis": 157.256
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "dataSize": 8192,
+            "iterations": 5,
+            "avgTimeMillis": 183.112
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "dataSize": 16384,
+            "iterations": 5,
+            "avgTimeMillis": 285.855
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "dataSize": 32768,
+            "iterations": 5,
+            "avgTimeMillis": 546.489
+          }
+        ],
+        "strongScaling": [
+          {
+            "threads": 1,
+            "executedThreads": 1,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 141.871
+          },
+          {
+            "threads": 2,
+            "executedThreads": 2,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 95.312
+          },
+          {
+            "threads": 4,
+            "executedThreads": 4,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 77.064
+          },
+          {
+            "threads": 8,
+            "executedThreads": 8,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 64.448
+          },
+          {
+            "threads": 16,
+            "executedThreads": 16,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 104.233
+          },
+          {
+            "threads": 32,
+            "executedThreads": 32,
+            "totalSize": 1024,
+            "iterations": 5,
+            "avgTimeMillis": 103.33
+          }
+        ]
+      }
+    }
+  ]
+}
