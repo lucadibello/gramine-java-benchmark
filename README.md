@@ -126,15 +126,6 @@ The automation wrapper (`tools/run-benchmarks.py`) executes `make clean` before 
      --truststore client.truststore --password changeit
    ```
 
-Client and server emit log entries such as:
-
-```
-[Client] Sent value 1.000000 (server private sum 0.123456)
-[Server] Added value 1.000000 at index 0 (current private sum 0.123456)
-```
-
-These messages confirm that the client payload is added to the binary tree in real time.
-
 ### Automated runs
 
 Execute all server variants and collect results in one go:
@@ -149,7 +140,6 @@ Key flags:
 |--------|-------------|
 | `--variants jvm-gramine native-static` | Limit the run to the specified variants. |
 | `--all` | Execute all variants (default when no subset is provided). |
-| `--no-sudo` | Skip `sudo`. Use when running outside SGX or inside privileged containers. |
 
 Artifacts for each run are stored in `scaling-results/<timestamp>/`:
 
@@ -200,36 +190,9 @@ Generated files include:
 - `plots/<variant>_weak_throughput.png`
 - `plots/<variant>_weak_speedup_efficiency.png`
 
-The baseline JVM variant (`jvm-local`) is intentionally skipped when creating per-variant PNGs; its values remain in the CSV/JSON for comparisons.
-
-## Verifying the Data Path
-
-Both the client and server emit informative log lines. When the TLS connection is active, every `ADD` command should be echoed on both sides:
-
-```
-[Client] Sent value 42.000000 (server private sum 123.456789)
-[Server] Added value 42.000000 at index 37 (current private sum 123.456789)
-```
-
-Observe the `.out` files under `scaling-results/<timestamp>/logs/` or attach directly to stdout when running manually. If the logs diverge, double-check TLS certificates, truststore/keystore mounting inside the Gramine manifest, and network connectivity.
+> The baseline JVM variant (`jvm-local`) is intentionally skipped when creating per-variant PNGs; its values remain in the CSV/JSON for comparisons.
 
 ## References
 
 - [Gramine Documentation](https://gramine.readthedocs.io/)
 - [GraalVM Native Image](https://www.graalvm.org/native-image/)
-- Differential privacy background: [Binary Tree Mechanism](https://arxiv.org/abs/1712.08724)
-- `<variant>_strong_throughput.png`
-- `<variant>_strong_speedup_efficiency.png` (speedup and efficiency subplots)
-- `<variant>_weak_throughput.png`
-- `<variant>_weak_speedup_efficiency.png`
-Example (native dynamic variant, strong scaling):
-
-![Native dynamic strong throughput](plots/native-dynamic_strong_throughput.png)
-
-![Native dynamic strong speedup & efficiency](plots/native-dynamic_strong_speedup_efficiency.png)
-
-Example (native dynamic variant, weak scaling):
-
-![Native dynamic weak throughput](plots/native-dynamic_weak_throughput.png)
-
-![Native dynamic weak speedup & efficiency](plots/native-dynamic_weak_speedup_efficiency.png)
