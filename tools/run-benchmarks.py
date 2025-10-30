@@ -136,7 +136,7 @@ def build_variant_configs(
                 "changeit",
             ],
             env={},
-            build_steps=[["make", "server"]],
+            build_steps=[["make","client"], ["make", "server"]],
             startup_timeout=45,
         ),
         "jvm-gramine": VariantConfig(
@@ -350,10 +350,10 @@ class BenchmarkCoordinator:
             config.server_cmd,
             cwd=self.paths.root,
             env=merged_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             text=True,
         )
-        # stdout=subprocess.DEVNULL,
-        # stderr=subprocess.DEVNULL,
 
         try:
             start_time = time.time()
