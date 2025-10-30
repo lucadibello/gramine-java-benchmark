@@ -1,0 +1,30 @@
+libos.entrypoint = "target/bin/BenchServer"
+
+loader.log_level = "{{ log_level }}"
+
+loader.insecure__use_cmdline_argv = true
+
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+
+fs.mounts = [
+  { uri = "file:{{ gramine.runtimedir() }}",    path = "/lib" },
+  { uri = "file:{{ arch_libdir }}",             path = "{{ arch_libdir }}" },
+  { uri = "file:/usr",                          path = "/usr" },
+]
+
+sgx.enclave_size = "8G"
+sgx.max_threads = {{ '1' if env.get('EDMM', '0') == '1' else '32' }}
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+sgx.use_exinfo = true
+
+sgx.trusted_files = [
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/{{ arch_libdir }}/",
+  "file:target/bin/",
+]
+
+sgx.allowed_files = [
+  "file:server.keystore",
+  "file:client.truststore",
+]
