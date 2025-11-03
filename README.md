@@ -1,30 +1,80 @@
 # Gramine Java Benchmark
 
-Benchmark suite that exercises a differentially private binary aggregation tree inside a Gramine-protected JVM. A TLS client streams floating-point values to the TLS enclave; the server keeps the noisy private sum and exposes the same `initBinaryAggregation`, `addToBinaryAggregation`, and `getBinaryAggregationSum` calls that the Java host expects. This repository mirrors the structure used in related aggregation experiments while targeting Gramine rather than relying on ECALL/OCALL support.
+Benchmark suite that evaluates a differentially private binary aggregation tree inside a Gramine-protected JVM. A TLS client streams floating-point values to the enclave; the server keeps the noisy private sum and exposes the familiar `initBinaryAggregation`, `addToBinaryAggregation`, and `getBinaryAggregationSum` calls. The layout mirrors the companion Java aggregation benchmarks so that results stay comparable while swapping Teaclave SGX for Gramine.
 
 ## Project Layout
 
-- `src/server/` – TLS server (`com.benchmark.gramine.enclave.BenchServer`) executed inside Gramine. Implements the command protocol (`INIT`, `ADD`, `GET`) and logs each ingestion so the data path can be verified easily.
-- `src/server/com/.../dp/BinaryAggregationTree.java` – Gaussian-noise binary aggregation tree used by the server. The code is identical to the companion aggregation experiments, ensuring the same noise model and semantics.
-- `src/client/` – Host harness (`com.benchmark.gramine.host.BenchClient`) that prepares weak/strong scaling workloads, drives the TLS service, and prints a JSON summary
-- `tools/run-benchmarks.py` – Automation wrapper. Builds each server variant, launches it, runs the client once, and writes combined CSV/JSON artifacts under `scaling-results/<timestamp>/`.
-- `tools/generate_plots.py` – Turns the CSV/JSON outputs into PNG plots (per-variant throughput plus combined speedup/efficiency, and a startup-time comparison).
+- `src/server/` – TLS enclave server (`com.benchmark.gramine.enclave.BenchServer`) executed inside Gramine. Implements the command protocol (`INIT`, `ADD`, `GET`) and logs each ingestion for traceability.
+- `src/server/com/.../dp/BinaryAggregationTree.java` – Gaussian-noise aggregation tree shared with the other benchmark suites to preserve behaviour.
+- `src/client/` – Host harness (`com.benchmark.gramine.host.BenchClient`) that prepares workloads, drives weak/strong scaling runs, and prints JSON metrics.
+- `tools/run-benchmarks.py` – Automation wrapper that builds each server variant, runs the client once, and writes combined CSV/JSON artifacts under `scaling-results/<timestamp>/`.
+- `tools/generate_plots.py` – Turns the CSV/JSON outputs into PNG plots (per-variant throughput, speedup/efficiency, and startup-time comparisons).
 
-## Benchmark Workflow
+## Benchmark Approach
 
-Each benchmark execution follows three phases:
+Each benchmark execution follows three phases that align with the companion Teaclave suite:
 
-1. **Baseline workload** – The client uses `GRAMINE_BENCH_DATA_SIZE` together with the smallest requested thread count to determine the per-thread workload. A warmup pass runs before measurements.
-2. **Weak scaling** – The number of worker threads grows while the per-thread workload stays constant.
-3. **Strong scaling** – The number of worker threads grows while the total workload stays constant.
+1. **Baseline workload** – The client uses `GRAMINE_BENCH_DATA_SIZE` with the smallest requested thread count to derive the per-thread workload. A short warmup runs before measurements.
+2. **Weak scaling** – The number of worker threads increases while the per-thread workload remains fixed.
+3. **Strong scaling** – The total workload stays fixed while the number of worker threads increases.
 
-The client prints the workload, weak scaling, and strong scaling results as JSON so downstream plotting scripts can consume the output directly.
+The client prints JSON summaries for all phases so downstream plotting scripts can consume the output directly.
 
-## Recent Results
+## Results
 
-Example dataset: `scaling-results/20251030_004543/` (data size = 1024, sigma = 0.5, warmup = 3, measure = 5).
+Example dataset: `scaling-results/20251030_004543/` (data size = 1024, sigma = 0.5, warmup = 3, measure = 5). The run compares three server variants executed through Gramine: `jvm-gramine`, `native-dynamic`, and `native-static`. Artifacts land in `scaling-results/<timestamp>/` and plots in `plots/`.
 
-Generate plots:
+### Strong Scaling
+
+Throughput scales from a single client up to 16 clients before Gramine scheduling overheads flatten the gains. Speedup and efficiency are highest for the native variants (`native-dynamic`, `native-static`), reaching ~5× speedup at eight clients. Refer to `plots/<variant>_strong_throughput.png` and `plots/<variant>_strong_speedup_efficiency.png` for the detailed traces.
+
+#### JVM (Gramine)
+
+![JVM Gramine strong throughput](plots/jvm-gramine_strong_throughput.png)
+
+![JVM Gramine strong speedup & efficiency](plots/jvm-gramine_strong_speedup_efficiency.png)
+
+#### Native (Dynamic)
+
+![Native dynamic strong throughput](plots/native-dynamic_strong_throughput.png)
+
+![Native dynamic strong speedup & efficiency](plots/native-dynamic_strong_speedup_efficiency.png)
+
+#### Native (Static)
+
+![Native static strong throughput](plots/native-static_strong_throughput.png)
+
+![Native static strong speedup & efficiency](plots/native-static_strong_speedup_efficiency.png)
+
+### Weak Scaling
+
+Weak scaling stays close to linear: aggregate throughput increases steadily as threads are added, and the native variants show the largest improvements. See `plots/<variant>_weak_throughput.png` and `plots/<variant>_weak_speedup_efficiency.png`.
+
+#### JVM (Gramine)
+
+![JVM Gramine weak throughput](plots/jvm-gramine_weak_throughput.png)
+
+![JVM Gramine weak speedup & efficiency](plots/jvm-gramine_weak_speedup_efficiency.png)
+
+#### Native (Dynamic)
+
+![Native dynamic weak throughput](plots/native-dynamic_weak_throughput.png)
+
+![Native dynamic weak speedup & efficiency](plots/native-dynamic_weak_speedup_efficiency.png)
+
+#### Native (Static)
+
+![Native static weak throughput](plots/native-static_weak_throughput.png)
+
+![Native static weak speedup & efficiency](plots/native-static_weak_speedup_efficiency.png)
+
+### Startup Time
+
+`plots/startup_times.png` summarises the bootstrap time for each server variant when launched through Gramine. Native images start faster than the JVM-backed variant once the enclave is provisioned.
+
+![Startup times](plots/startup_times.png)
+
+### Reproducing the Figures
 
 ```bash
 python -m venv .venv
@@ -36,56 +86,33 @@ python tools/generate_plots.py \
   --output plots
 ```
 
-### Startup time comparison
-
-`tools/generate_plots.py` emits `plots/startup_times.png`, a bar chart that compares the time each server variant spends bootstrapping when launched through Gramine:
-
-![Startup times](plots/startup_times.png)
-
-### Variant plots
-
-For every non-baseline variant (`jvm-gramine`, `native-dynamic`, `native-static`), the plotting script writes:
-
-- `<variant>_strong_throughput.png`
-- `<variant>_strong_speedup_efficiency.png` (speedup and efficiency subplots)
-- `<variant>_weak_throughput.png`
-- `<variant>_weak_speedup_efficiency.png`
-
-Example (native dynamic variant):
-
-![Native dynamic strong throughput](plots/native-dynamic_strong_throughput.png)
-
-![Native dynamic strong speedup & efficiency](plots/native-dynamic_strong_speedup_efficiency.png)
-
-![Native dynamic weak throughput](plots/native-dynamic_weak_throughput.png)
-
-![Native dynamic weak speedup & efficiency](plots/native-dynamic_weak_speedup_efficiency.png)
-
-The baseline `jvm-local` data remains in the CSV/JSON outputs for reference but is omitted from the PNGs to avoid clutter.
-
 ## Getting Started
+
+You can work from the host OS or inside the preconfigured devcontainer.
 
 ### Option 1: Devcontainer (recommended)
 
 1. Install Docker and either the VS Code Dev Containers extension or the `devcontainer` CLI.
-2. From the repository root run `task devcontainer` or reopen the folder in a devcontainer.
-3. The container provisions GraalVM, Gramine, and the helper scripts.
+2. From the repository root run `task devcontainer` **or** open the folder in VS Code and choose “Reopen in Container”.
+3. The container provisions GraalVM, Gramine, and the helper scripts automatically.
 
-Common `go-task` entries:
+Convenient `go-task` entries:
 
 | Task | Description |
 |------|-------------|
-| `task devcontainer` | Build, start, and attach to the devcontainer. |
-| `task devcontainer-up` / `task devcontainer-down` | Manage the container lifecycle without attaching. |
-| `task devcontainer-recreate` | Rebuild the environment from scratch. |
+| `task devcontainer` | Build, start, and attach to the devcontainer (wrapper around the tasks below). |
+| `task devcontainer-up` | Start or reuse the devcontainer without attaching. |
+| `task devcontainer-attach` | Exec into the running devcontainer shell. |
+| `task devcontainer-down` | Stop and remove the container and volumes. |
+| `task devcontainer-recreate` | Rebuild the container from scratch for a clean environment. |
 
-### Option 2: Host toolchain
+### Option 2: Local Toolchain
 
 Install the dependencies locally:
 
-- GraalVM (for both the JVM and the `native-image` toolchain)
+- GraalVM (JVM plus `native-image`)
 - Gramine (`gramine`, `gramine-sgx`, `gramine-manifest`)
-- GNU Make, Python 3.9+, and OpenJDK support tools
+- GNU Make, Python 3.9+, and OpenJDK tooling
 
 Clone the repository and continue with the build instructions below.
 
@@ -105,51 +132,33 @@ make APP_NAME=native-bench-dynamic STATIC_NATIVE=0 SGX=1 all
 make APP_NAME=native-bench-static STATIC_NATIVE=1 SGX=1 all
 ```
 
-The automation wrapper (`tools/run-benchmarks.py`) executes `make clean` before building each variant, ensuring every run starts from a known baseline.
+`tools/run-benchmarks.py` runs `make clean` before each variant build so the benchmarks always start from a known baseline.
 
 ## Running Benchmarks
 
-### Manual runs
-
-1. **Start the server (outside SGX):**
-
-   ```bash
-   java -cp target/classes com.benchmark.gramine.enclave.BenchServer \
-     --port 8443 --keystore server.keystore --password changeit
-   ```
-
-2. **Run the client:**
-
-   ```bash
-   java -cp target/classes com.benchmark.gramine.host.BenchClient \
-     --host localhost --port 8443 \
-     --truststore client.truststore --password changeit
-   ```
-
-### Automated runs
-
-Execute all server variants and collect results in one go:
+The automation wrapper builds the selected variants, launches the Gramine server, and drives one client run per variant:
 
 ```bash
-python tools/run-benchmarks.py --all --no-sudo
+python tools/run-benchmarks.py --variants jvm-gramine native-dynamic native-static
 ```
 
-Key flags:
+Key options:
 
 | Option | Description |
 |--------|-------------|
-| `--variants jvm-gramine native-static` | Limit the run to the specified variants. |
+| `--variants <list>` | Limit the run to the specified variants. |
 | `--all` | Execute all variants (default when no subset is provided). |
+| `--output <dir>` | Override the target directory under `scaling-results/`. |
 
-Artifacts for each run are stored in `scaling-results/<timestamp>/`:
+Each run produces:
 
-- `benchmark_results.json` – Combined JSON payload with one summary per variant (includes `startupTimeSeconds`).
-- `scaling_results.csv` – Flattened metrics per variant and scaling mode.
-- `logs/*.out` / `logs/*.err` – Raw client output (and stderr when present).
+- `scaling-results/<timestamp>/benchmark_results.json` – Startup metrics and per-variant summaries.
+- `scaling-results/<timestamp>/scaling_results.csv` – Flattened metrics per variant and scaling mode.
+- `scaling-results/<timestamp>/logs/*.out` / `*.err` – Raw client output (and stderr when present).
 
 ## Configuration
 
-The client reads defaults from environment variables or an `.env` file at repo root:
+Defaults come from environment variables or an `.env` file at the repository root:
 
 ```
 GRAMINE_BENCH_SIGMA=0.5
@@ -161,7 +170,7 @@ GRAMINE_BENCH_MEASURE=5
 GRAMINE_BENCH_NATIVE_PARALLELISM=32
 ```
 
-To apply these values:
+Apply them in one shot:
 
 ```bash
 set -a
@@ -169,11 +178,21 @@ source .env
 set +a
 ```
 
-CLI flags can override any setting (check `java com.benchmark.gramine.host.BenchClient --help`).
+CLI flags override any setting (`java com.benchmark.gramine.host.BenchClient --help` lists all options).
+
+## Collecting Metrics
+
+Redirect the client output to capture the workload, weak scaling, and strong scaling summaries for custom post-processing:
+
+```bash
+python tools/run-benchmarks.py --variants native-dynamic > scaling-results/latest-run.json
+```
+
+The JSON contains per-pass throughput/latency measurements; the CSV is convenient for plotting tools that prefer tabular data.
 
 ## Plotting
 
-After running the benchmarks:
+After collecting metrics, generate the PNG figures:
 
 ```bash
 python tools/generate_plots.py \
@@ -182,79 +201,13 @@ python tools/generate_plots.py \
   --output plots
 ```
 
-Generated files include:
+The script writes:
 
 - `plots/startup_times.png`
 - `plots/<variant>_strong_throughput.png`
 - `plots/<variant>_strong_speedup_efficiency.png`
 - `plots/<variant>_weak_throughput.png`
 - `plots/<variant>_weak_speedup_efficiency.png`
-
-> The baseline JVM variant (`jvm-local`) is intentionally skipped when creating per-variant PNGs; its values remain in the CSV/JSON for comparisons.
-
-## Plots included (plots/)
-
-Below are the PNGs produced by `tools/generate_plots.py` (files are in `plots/`). Each image is shown inline with a short description.
-
-### Startup time comparison
-
-- `startup_times.png` — Bar chart comparing server startup/bootstrap time across variants.
-
-![Startup times](plots/startup_times.png)
-
-### JVM (Gramine) variant: `jvm-gramine`
-
-- `jvm-gramine_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
-
-![JVM Gramine strong throughput](plots/jvm-gramine_strong_throughput.png)
-
-- `jvm-gramine_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
-
-![JVM Gramine strong speedup & efficiency](plots/jvm-gramine_strong_speedup_efficiency.png)
-
-- `jvm-gramine_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
-
-![JVM Gramine weak throughput](plots/jvm-gramine_weak_throughput.png)
-
-- `jvm-gramine_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
-
-![JVM Gramine weak speedup & efficiency](plots/jvm-gramine_weak_speedup_efficiency.png)
-
-### Native (dynamic) variant: `native-dynamic`
-
-- `native-dynamic_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
-
-![Native dynamic strong throughput](plots/native-dynamic_strong_throughput.png)
-
-- `native-dynamic_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
-
-![Native dynamic strong speedup & efficiency](plots/native-dynamic_strong_speedup_efficiency.png)
-
-- `native-dynamic_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
-
-![Native dynamic weak throughput](plots/native-dynamic_weak_throughput.png)
-
-- `native-dynamic_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
-
-![Native dynamic weak speedup & efficiency](plots/native-dynamic_weak_speedup_efficiency.png)
-
-### Native (static) variant: `native-static`
-
-- `native-static_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
-
-![Native static strong throughput](plots/native-static_strong_throughput.png)
-
-- `native-static_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
-
-![Native static strong speedup & efficiency](plots/native-static_strong_speedup_efficiency.png)
-
-- `native-static_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
-
-![Native static weak throughput](plots/native-static_weak_throughput.png)
-
-- `native-static_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
-
-![Native static weak speedup & efficiency](plots/native-static_weak_speedup_efficiency.png)
 
 ## References
 
