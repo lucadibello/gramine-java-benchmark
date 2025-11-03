@@ -192,6 +192,70 @@ Generated files include:
 
 > The baseline JVM variant (`jvm-local`) is intentionally skipped when creating per-variant PNGs; its values remain in the CSV/JSON for comparisons.
 
+## Plots included (plots/)
+
+Below are the PNGs produced by `tools/generate_plots.py` (files are in `plots/`). Each image is shown inline with a short description.
+
+### Startup time comparison
+
+- `startup_times.png` — Bar chart comparing server startup/bootstrap time across variants.
+
+![Startup times](plots/startup_times.png)
+
+### JVM (Gramine) variant: `jvm-gramine`
+
+- `jvm-gramine_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
+
+![JVM Gramine strong throughput](plots/jvm-gramine_strong_throughput.png)
+
+- `jvm-gramine_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
+
+![JVM Gramine strong speedup & efficiency](plots/jvm-gramine_strong_speedup_efficiency.png)
+
+- `jvm-gramine_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
+
+![JVM Gramine weak throughput](plots/jvm-gramine_weak_throughput.png)
+
+- `jvm-gramine_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
+
+![JVM Gramine weak speedup & efficiency](plots/jvm-gramine_weak_speedup_efficiency.png)
+
+### Native (dynamic) variant: `native-dynamic`
+
+- `native-dynamic_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
+
+![Native dynamic strong throughput](plots/native-dynamic_strong_throughput.png)
+
+- `native-dynamic_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
+
+![Native dynamic strong speedup & efficiency](plots/native-dynamic_strong_speedup_efficiency.png)
+
+- `native-dynamic_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
+
+![Native dynamic weak throughput](plots/native-dynamic_weak_throughput.png)
+
+- `native-dynamic_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
+
+![Native dynamic weak speedup & efficiency](plots/native-dynamic_weak_speedup_efficiency.png)
+
+### Native (static) variant: `native-static`
+
+- `native-static_strong_throughput.png` — Strong-scaling throughput (throughput vs thread count).
+
+![Native static strong throughput](plots/native-static_strong_throughput.png)
+
+- `native-static_strong_speedup_efficiency.png` — Strong-scaling speedup and parallel efficiency (two subplots).
+
+![Native static strong speedup & efficiency](plots/native-static_strong_speedup_efficiency.png)
+
+- `native-static_weak_throughput.png` — Weak-scaling throughput (throughput vs thread count).
+
+![Native static weak throughput](plots/native-static_weak_throughput.png)
+
+- `native-static_weak_speedup_efficiency.png` — Weak-scaling speedup and parallel efficiency (two subplots).
+
+![Native static weak speedup & efficiency](plots/native-static_weak_speedup_efficiency.png)
+
 ## References
 
 - [Gramine Documentation](https://gramine.readthedocs.io/)

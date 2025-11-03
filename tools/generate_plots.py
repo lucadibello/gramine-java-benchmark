@@ -7,7 +7,7 @@ Usage:
     --results scaling-results/20251030_004543/scaling_results.csv \
     --output plots/
 
-The script expects a CSV with the schema documented in README.md:
+CSV schema (see README.md):
   variant,scaling_type,threads,executed_threads,data_size,total_size,iterations,avg_time_millis
 
 For each non-baseline variant it produces two PNG files per scaling mode:
@@ -15,6 +15,7 @@ For each non-baseline variant it produces two PNG files per scaling mode:
   <variant>_<scaling>_speedup_efficiency.png
 The baseline `jvm-local` variant is excluded from per-variant plots.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,11 +32,11 @@ import numpy as np
 @dataclass
 class ScalingEntry:
     variant: str
-    scaling_type: str
+    scaling_type: str  # "strong" or "weak"
     threads: int
     executed_threads: int
-    data_size: float
-    total_size: float
+    data_size: float  # For WEAK: total work per run (already scales with p)
+    total_size: float  # For STRONG: total constant work across p
     iterations: int
     avg_time_ms: float
 
@@ -45,9 +46,13 @@ class ScalingEntry:
 
     @property
     def work_amount(self) -> float:
+        # IMPORTANT FIX:
+        # - Weak scaling rows already carry TOTAL work for that run in data_size (pN).
+        #   Do NOT multiply by threads again.
+        # - Strong scaling uses total_size (constant N).
         if self.scaling_type == "strong":
             return self.total_size
-        return self.data_size * self.executed_threads
+        return self.data_size
 
 
 def _parse_csv(path: Path) -> Dict[str, Dict[str, List[ScalingEntry]]]:
@@ -76,16 +81,44 @@ def _parse_csv(path: Path) -> Dict[str, Dict[str, List[ScalingEntry]]]:
     return result
 
 
-def _compute_metrics(entries: Iterable[ScalingEntry]) -> Dict[str, np.ndarray]:
-    entries = list(entries)
-    threads = np.array([item.executed_threads for item in entries], dtype=int)
-    work = np.array([item.work_amount for item in entries], dtype=float)
-    duration = np.array([item.duration_seconds for item in entries], dtype=float)
+def _compute_metrics(
+    entries: Iterable[ScalingEntry], scaling_type: str
+) -> Dict[str, np.ndarray]:
+    """
+    Returns arrays for threads, work, duration, throughput, speedup, efficiency.
 
+    Strong:
+      throughput = total_size / time
+      speedup    = throughput(p) / throughput(1)
+      efficiency = speedup / p
+
+    Weak:
+      throughput = data_size(p) / time               # data_size already equals p*N
+      E_weak     = T1(N) / Tp(pN)                    # based on durations only
+      S_scaled   = p * E_weak                        # reported as 'speedup' for plotting
+    """
+    entries = list(entries)
+    threads = np.array([it.executed_threads for it in entries], dtype=int)
+    work = np.array([it.work_amount for it in entries], dtype=float)
+    duration = np.array([it.duration_seconds for it in entries], dtype=float)
+
+    # Always useful to visualize absolute throughput
     throughput = work / duration
-    baseline = throughput[threads.argmin()]
-    speedup = throughput / baseline
-    efficiency = speedup / threads
+
+    if scaling_type == "strong":
+        # baseline at p = 1
+        if not np.any(threads == 1):
+            raise ValueError("Strong scaling group lacks a p=1 baseline.")
+        baseline_tp = throughput[threads == 1][0]
+        speedup = throughput / baseline_tp
+        efficiency = speedup / threads
+    else:
+        # Weak scaling metrics (corrected)
+        if not np.any(threads == 1):
+            raise ValueError("Weak scaling group lacks a p=1 baseline.")
+        T1N = duration[threads == 1][0]
+        efficiency = T1N / duration  # E_weak(p)
+        speedup = threads * efficiency  # Scaled speedup
 
     return {
         "threads": threads,
@@ -110,19 +143,23 @@ def _plot_throughput(metrics: Dict[str, np.ndarray], title: str, outfile: Path) 
     plt.close(fig)
 
 
-def _plot_speedup_efficiency(metrics: Dict[str, np.ndarray], title_prefix: str, outfile: Path) -> None:
+def _plot_speedup_efficiency(
+    metrics: Dict[str, np.ndarray], title_prefix: str, outfile: Path
+) -> None:
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 4))
+
+    is_weak = "weak" in title_prefix.lower()
 
     axes[0].plot(metrics["threads"], metrics["speedup"], marker="o")
     axes[0].set_xlabel("Clients (threads)")
-    axes[0].set_ylabel("Throughput speedup")
-    axes[0].set_title(f"{title_prefix} Speedup")
+    axes[0].set_ylabel("Scaled speedup" if is_weak else "Throughput speedup")
+    axes[0].set_title(f"{title_prefix} {'Scaled Speedup' if is_weak else 'Speedup'}")
     axes[0].grid(True, linestyle="--", alpha=0.5)
     _set_thread_ticks(axes[0], metrics["threads"])
 
     axes[1].plot(metrics["threads"], metrics["efficiency"], marker="o")
     axes[1].set_xlabel("Clients (threads)")
-    axes[1].set_ylabel("Parallel efficiency")
+    axes[1].set_ylabel("Parallel efficiency" + (" (weak)" if is_weak else ""))
     axes[1].set_title(f"{title_prefix} Efficiency")
     axes[1].grid(True, linestyle="--", alpha=0.5)
     _set_thread_ticks(axes[1], metrics["threads"])
@@ -145,12 +182,14 @@ def _generate_variant_plots(
     entries: List[ScalingEntry],
     output_dir: Path,
 ) -> None:
-    metrics = _compute_metrics(entries)
+    metrics = _compute_metrics(entries, scaling_type)
 
     def outfile(name: str) -> Path:
         return output_dir / f"{variant}_{scaling_type}_{name}.png"
 
-    title_prefix = f"{variant.replace('-', ' ').title()} – {scaling_type.capitalize()} Scaling"
+    title_prefix = (
+        f"{variant.replace('-', ' ').title()} – {scaling_type.capitalize()} Scaling"
+    )
     _plot_throughput(metrics, f"{title_prefix} Throughput", outfile("throughput"))
     _plot_speedup_efficiency(metrics, title_prefix, outfile("speedup_efficiency"))
 
@@ -160,13 +199,13 @@ def main() -> None:
     parser.add_argument(
         "--results",
         type=Path,
-        default=Path("scaling-results") / "latest" / "scaling_results.csv",
+        default=Path("data") / "latest" / "scaling_results.csv",
         help="Path to scaling_results.csv (default: scaling-results/latest/scaling_results.csv).",
     )
     parser.add_argument(
         "--startup",
         type=Path,
-        default=Path("scaling-results") / "latest" / "benchmark_results.json",
+        default=Path("data") / "latest" / "benchmark_results.json",
         help="Path to benchmark_results.json (default: scaling-results/latest/benchmark_results.json).",
     )
     parser.add_argument(
